@@ -1,160 +1,176 @@
-import customtkinter as ctk
-import tkinter as tk
-import sim_engine
 import math
-import random
+import customtkinter as ctk
 
-import matplotlib
-matplotlib.use("TkAgg")
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# Attempt C++ module import with fallback for standalone UI testing
+try:
+    import network_engine as sim_engine
+except ImportError:
+    sim_engine = None
 
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
 
 class SimulatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         self.title("Adaptive AI Outbreak & Threat Simulator")
-        
-        # Start maximized or fallback to a standard aspect ratio
-        self.geometry("1100x750")
+        self.geometry("1100x700")
 
-        self.step_counter = 0
         self.is_running = False
+        self.step_counter = 0
         self.loop_job = None
 
-        self.nodes = []
+        self.canvas_nodes = []
+        self.nodes_data = []
         self.edges = []
 
-        self.steps_history = []
-        self.threat_history = []
-        self.infected_history = []
+        self._build_ui()
+        self._on_level_change("Level 1: Ring Topology")
 
-        # Grid Layout Configuration - Balanced Row Weights
-        self.grid_rowconfigure(0, weight=3) # Canvas & Log
-        self.grid_rowconfigure(1, weight=2) # Matplotlib Plot
-        self.grid_rowconfigure(2, weight=1) # Controls & Sliders
-        
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+    def _build_ui(self):
+        self.grid_columnconfigure(0, weight=3)
+        self.grid_columnconfigure(1, weight=2)
+        self.grid_rowconfigure(0, weight=1)
 
-        # 1. Top Left: Interactive Network Canvas
-        self.canvas_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.canvas_frame.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
-        
-        self.canvas_label = ctk.CTkLabel(self.canvas_frame, text="Interactive Network Canvas", font=("Arial", 14, "bold"))
-        self.canvas_label.pack(pady=2)
+        # Left Column: Canvas + Controls
+        left_frame = ctk.CTkFrame(self)
+        left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        left_frame.grid_rowconfigure(2, weight=1)
+        left_frame.grid_columnconfigure(0, weight=1)
 
-        self.canvas = tk.Canvas(self.canvas_frame, bg="#1a1a1a", highlightthickness=0)
-        self.canvas.pack(padx=5, pady=5, fill="both", expand=True)
+        # Top Control Panel (Level Select + Sliders)
+        top_control_frame = ctk.CTkFrame(left_frame)
+        top_control_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
 
-        # 2. Top Right: Live Log Feed
-        self.telemetry_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.telemetry_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
-        
-        self.telemetry_label = ctk.CTkLabel(self.telemetry_frame, text="Live Telemetry & Metrics", font=("Arial", 14, "bold"))
-        self.telemetry_label.pack(pady=2)
-
-        self.log_box = ctk.CTkTextbox(self.telemetry_frame, width=380, height=180)
-        self.log_box.pack(padx=5, pady=5, fill="both", expand=True)
-
-        # 3. Middle Section: Real-Time Matplotlib Telemetry Plot
-        self.plot_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.plot_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
-
-        self.init_matplotlib_figure()
-
-        # 4. Bottom Panel: Playback Controls & Dynamic Parameters
-        self.control_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.control_frame.grid(row=2, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
-        
-        # Buttons
-        self.btn_play = ctk.CTkButton(self.control_frame, text="Play", command=self.play_sim, fg_color="#2FA572", hover_color="#1E6B49", width=80)
-        self.btn_play.pack(side="left", padx=10, pady=10)
-
-        self.btn_pause = ctk.CTkButton(self.control_frame, text="Pause", command=self.pause_sim, fg_color="#D35B58", hover_color="#8E3C3A", width=80)
-        self.btn_pause.pack(side="left", padx=5, pady=10)
-
-        self.btn_reset = ctk.CTkButton(self.control_frame, text="Reset", command=self.reset_sim, fg_color="#555555", hover_color="#333333", width=80)
-        self.btn_reset.pack(side="left", padx=5, pady=10)
+        ctk.CTkLabel(top_control_frame, text="Select Scenario:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5, pady=5)
+        self.level_menu = ctk.CTkOptionMenu(
+            top_control_frame,
+            values=["Level 1: Ring Topology", "Level 2: Mesh Network", "Level 3: Star Cluster"],
+            command=self._on_level_change
+        )
+        self.level_menu.grid(row=0, column=1, padx=5, pady=5)
 
         # Sliders
-        self.lbl_inf = ctk.CTkLabel(self.control_frame, text="Infection Rate:", font=("Arial", 11, "bold"))
-        self.lbl_inf.pack(side="left", padx=(15, 2), pady=10)
-        self.slider_infection = ctk.CTkSlider(self.control_frame, from_=0.1, to=3.0, number_of_steps=29, width=130)
-        self.slider_infection.set(1.2)
-        self.slider_infection.pack(side="left", padx=5, pady=10)
+        slider_frame = ctk.CTkFrame(left_frame)
+        slider_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
-        self.lbl_def = ctk.CTkLabel(self.control_frame, text="Defense Power:", font=("Arial", 11, "bold"))
-        self.lbl_def.pack(side="left", padx=(15, 2), pady=10)
-        self.slider_defense = ctk.CTkSlider(self.control_frame, from_=0.1, to=3.0, number_of_steps=29, width=130)
-        self.slider_defense.set(1.0)
-        self.slider_defense.pack(side="left", padx=5, pady=10)
+        ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(row=0, column=0, padx=5, pady=5)
+        self.slider_inf = ctk.CTkSlider(slider_frame, from_=0.1, to=1.0, number_of_steps=9)
+        self.slider_inf.set(0.3)
+        self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
 
-        self.after(200, self.init_network_graph)
+        ctk.CTkLabel(slider_frame, text="Defense Power:").grid(row=0, column=2, padx=5, pady=5)
+        self.slider_def = ctk.CTkSlider(slider_frame, from_=0.1, to=1.0, number_of_steps=9)
+        self.slider_def.set(0.5)
+        self.slider_def.grid(row=0, column=3, padx=5, pady=5)
 
-    def init_matplotlib_figure(self):
-        # Compact figure size (figsize height set to 1.8)
-        self.fig = Figure(figsize=(8, 1.8), dpi=100, facecolor="#2b2b2b")
-        self.ax = self.fig.add_subplot(111)
-        self.ax.set_facecolor("#1a1a1a")
+        # Network Canvas
+        self.net_canvas = ctk.CTkCanvas(left_frame, bg="#1e1e1e", highlightthickness=0)
+        self.net_canvas.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
 
-        self.ax.tick_params(colors="white", labelsize=7)
-        self.ax.spines['bottom'].set_color('#555555')
-        self.ax.spines['top'].set_color('#555555')
-        self.ax.spines['left'].set_color('#555555')
-        self.ax.spines['right'].set_color('#555555')
+        # Play/Pause/Reset Buttons
+        btn_frame = ctk.CTkFrame(left_frame)
+        btn_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+        btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        self.ax.set_title("Real-Time Threat & Infection Progression", color="white", fontsize=9, fontweight="bold")
-        self.ax.set_xlabel("Simulation Step", color="white", fontsize=7)
-        self.ax.set_ylabel("Threat Level (%)", color="white", fontsize=7)
+        self.btn_play = ctk.CTkButton(btn_frame, text="Play", fg_color="green", command=self.play_sim)
+        self.btn_play.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
-        self.line_threat, = self.ax.plot([], [], color="#FF4B4B", linewidth=2, label="Threat Level %")
-        self.line_infected, = self.ax.plot([], [], color="#3399FF", linewidth=2, linestyle="--", label="Infected Count")
+        self.btn_pause = ctk.CTkButton(btn_frame, text="Pause", fg_color="red", command=self.pause_sim)
+        self.btn_pause.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        self.ax.legend(loc="upper left", facecolor="#2b2b2b", edgecolor="none", labelcolor="white", fontsize=7)
+        self.btn_reset = ctk.CTkButton(btn_frame, text="Reset", command=self.reset_sim)
+        self.btn_reset.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
-        self.chart_canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
-        self.chart_canvas.draw()
-        self.chart_canvas.get_tk_widget().pack(padx=5, pady=2, fill="both", expand=True)
+        # Right Column: Telemetry Log
+        right_frame = ctk.CTkFrame(self)
+        right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        right_frame.grid_rowconfigure(1, weight=1)
+        right_frame.grid_columnconfigure(0, weight=1)
 
-    def init_network_graph(self):
-        self.canvas.delete("all")
-        self.nodes.clear()
-        self.edges.clear()
+        ctk.CTkLabel(right_frame, text="Live Telemetry & Metrics", font=("Arial", 16, "bold")).grid(row=0, column=0, padx=10, pady=10)
 
-        width = self.canvas.winfo_width() or 400
-        height = self.canvas.winfo_height() or 250
+        self.log_box = ctk.CTkTextbox(right_frame, font=("Courier", 12))
+        self.log_box.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+
+    def _on_level_change(self, selected_level):
+        self.reset_sim()
+        if "Ring" in selected_level:
+            self._generate_circular_topology(num_nodes=20)
+        elif "Mesh" in selected_level:
+            self._generate_mesh_topology(num_nodes=24)
+        else:
+            self._generate_star_topology(num_nodes=18)
+        self._render_network_topology()
+
+    def _generate_circular_topology(self, num_nodes=20):
+        self.nodes_data = [{"id": f"NODE-{i+1:02d}", "status": "HEALTHY"} for i in range(num_nodes)]
+        self.edges = []
+        for i in range(num_nodes):
+            self.edges.append((i, (i + 1) % num_nodes))
+            if i % 3 == 0:
+                self.edges.append((i, (i + 5) % num_nodes))
+
+    def _generate_mesh_topology(self, num_nodes=24):
+        self.nodes_data = [{"id": f"NODE-{i+1:02d}", "status": "HEALTHY"} for i in range(num_nodes)]
+        self.edges = []
+        for i in range(num_nodes):
+            self.edges.append((i, (i + 1) % num_nodes))
+            self.edges.append((i, (i + 2) % num_nodes))
+            if i % 2 == 0:
+                self.edges.append((i, (i + 6) % num_nodes))
+
+    def _generate_star_topology(self, num_nodes=18):
+        self.nodes_data = [{"id": f"NODE-{i+1:02d}", "status": "HEALTHY"} for i in range(num_nodes)]
+        self.edges = []
+        for i in range(1, num_nodes):
+            self.edges.append((0, i))
+            if i % 2 == 0:
+                self.edges.append((i, (i % (num_nodes - 1)) + 1))
+
+    def _render_network_topology(self):
+        self.net_canvas.delete("all")
+        width = self.net_canvas.winfo_width() or 500
+        height = self.net_canvas.winfo_height() or 400
+
         center_x, center_y = width / 2, height / 2
         radius = min(width, height) * 0.35
 
-        num_nodes = 25
+        num_nodes = len(self.nodes_data)
+        if num_nodes == 0:
+            return
+
+        node_coords = []
         for i in range(num_nodes):
             angle = (2 * math.pi / num_nodes) * i
-            x = center_x + radius * math.cos(angle) + random.randint(-10, 10)
-            y = center_y + radius * math.sin(angle) + random.randint(-10, 10)
-            self.nodes.append({"x": x, "y": y, "status": "healthy"})
+            x = center_x + radius * math.cos(angle)
+            y = center_y + radius * math.sin(angle)
+            node_coords.append((x, y))
 
-        for i in range(num_nodes):
-            next_node = (i + 1) % num_nodes
-            cross_node = (i + 7) % num_nodes
-            line1 = self.canvas.create_line(self.nodes[i]["x"], self.nodes[i]["y"], self.nodes[next_node]["x"], self.nodes[next_node]["y"], fill="#333333", width=2)
-            line2 = self.canvas.create_line(self.nodes[i]["x"], self.nodes[i]["y"], self.nodes[cross_node]["x"], self.nodes[cross_node]["y"], fill="#222222", width=1)
-            self.edges.extend([line1, line2])
+        for u, v in self.edges:
+            if u < len(node_coords) and v < len(node_coords):
+                x1, y1 = node_coords[u]
+                x2, y2 = node_coords[v]
+                self.net_canvas.create_line(x1, y1, x2, y2, fill="#444444", width=1)
 
-        for i, node in enumerate(self.nodes):
-            r = 7
-            oval = self.canvas.create_oval(node["x"]-r, node["y"]-r, node["x"]+r, node["y"]+r, fill="#17B890", outline="#0E6B53", width=2)
-            node["oval_id"] = oval
+        dot_radius = 8
+        for i, (x, y) in enumerate(node_coords):
+            status = self.nodes_data[i]["status"] if i < len(self.nodes_data) else "HEALTHY"
+            if status == "INFECTED":
+                color = "#FF5252"
+            elif status == "WARNING":
+                color = "#448AFF"
+            else:
+                color = "#69F0AE"
+
+            self.net_canvas.create_oval(
+                x - dot_radius, y - dot_radius,
+                x + dot_radius, y + dot_radius,
+                fill=color, outline=""
+            )
 
     def play_sim(self):
         if not self.is_running:
             self.is_running = True
-            if self.loop_job:
-                self.after_cancel(self.loop_job)
-                self.loop_job = None
             self.run_loop()
 
     def pause_sim(self):
@@ -166,43 +182,10 @@ class SimulatorApp(ctk.CTk):
     def reset_sim(self):
         self.pause_sim()
         self.step_counter = 0
-        
-        self.steps_history.clear()
-        self.threat_history.clear()
-        self.infected_history.clear()
-        
-        self.line_threat.set_data([], [])
-        self.line_infected.set_data([], [])
-        self.ax.relim()
-        self.ax.autoscale_view()
-        self.chart_canvas.draw()
-
         self.log_box.delete("1.0", "end")
-        self.log_box.insert("end", "[SYSTEM] Simulation state reset.\n" + "-"*40 + "\n")
-        self.init_network_graph()
-
-    def update_canvas_visuals(self, infected_count, defense_count):
-        for i, node in enumerate(self.nodes):
-            if i < infected_count // 4:
-                color, outline = "#FF4B4B", "#990000"
-            elif i < (infected_count // 4) + (defense_count // 4):
-                color, outline = "#1F78B4", "#0D324D"
-            else:
-                color, outline = "#17B890", "#0E6B53"
-
-            self.canvas.itemconfig(node["oval_id"], fill=color, outline=outline)
-
-    def update_plot(self, step, threat_pct, infected_count):
-        self.steps_history.append(step)
-        self.threat_history.append(threat_pct)
-        self.infected_history.append(infected_count)
-
-        self.line_threat.set_data(self.steps_history, self.threat_history)
-        self.line_infected.set_data(self.steps_history, self.infected_history)
-
-        self.ax.relim()
-        self.ax.autoscale_view()
-        self.chart_canvas.draw_idle()
+        for i in range(len(self.nodes_data)):
+            self.nodes_data[i]["status"] = "HEALTHY"
+        self._render_network_topology()
 
     def run_loop(self):
         if not self.is_running:
@@ -210,27 +193,63 @@ class SimulatorApp(ctk.CTk):
 
         self.step_counter += 1
 
-        inf_rate = float(self.slider_infection.get())
-        def_power = float(self.slider_defense.get())
-        
-        telemetry = sim_engine.run_step_telemetry(self.step_counter, inf_rate, def_power)
+        inf_rate = self.slider_inf.get()
+        def_power = self.slider_def.get()
+
+        if sim_engine is not None:
+            telemetry = sim_engine.run_step_telemetry(self.step_counter, inf_rate, def_power)
+            total_nodes = telemetry.get('total_nodes', len(self.nodes_data))
+        else:
+            total_nodes = len(self.nodes_data)
+
+        # Calculate infection progress dynamically across total active topology nodes
+        effective_rate = max(0.05, inf_rate - (def_power * 0.8))
+        infected_cnt = max(1, int(self.step_counter * effective_rate * 2))
+        infected_cnt = min(total_nodes, infected_cnt)
+
+        if sim_engine is not None:
+            telemetry['infected_nodes'] = infected_cnt
+            telemetry['threat_level_pct'] = (infected_cnt / max(1, total_nodes)) * 100.0
+        else:
+            telemetry = {
+                'step': self.step_counter,
+                'status': 'CONTAINMENT ACTIVE',
+                'infected_nodes': infected_cnt,
+                'total_nodes': total_nodes,
+                'active_defenses': int(def_power * 5),
+                'threat_level_pct': (infected_cnt / float(total_nodes)) * 100.0
+            }
+
+        for i in range(len(self.nodes_data)):
+            if i < infected_cnt:
+                self.nodes_data[i]['status'] = 'INFECTED'
+            elif i < infected_cnt + 2 and i < len(self.nodes_data):
+                self.nodes_data[i]['status'] = 'WARNING'
+            else:
+                self.nodes_data[i]['status'] = 'HEALTHY'
+
+        self._render_network_topology()
+
+        s = telemetry['step']
+        st = telemetry['status']
+        inf = telemetry['infected_nodes']
+        tot = telemetry['total_nodes']
+        df = telemetry['active_defenses']
+        th = telemetry['threat_level_pct']
 
         log_entry = (
-            f"[STEP {telemetry['step']}] Status: {telemetry['status']}\n"
-            f" ├─ Infection Rate: {inf_rate:.1f}x | Defense Power: {def_power:.1f}x\n"
-            f" ├─ Infected Nodes: {telemetry['infected_nodes']}/{telemetry['total_nodes']}\n"
-            f" ├─ Active Defenses: {telemetry['active_defenses']}\n"
-            f" └─ Threat Level: {telemetry['threat_level_pct']:.1f}%\n"
-            f"{'-'*40}\n"
+            "[STEP " + str(s) + "] Status: " + str(st) + "\n"
+            " ├── Infected Nodes: " + str(inf) + "/" + str(tot) + "\n"
+            " ├── Active Defenses: " + str(df) + "\n"
+            " └── Threat Level: " + str(round(th, 1)) + "%\n\n"
         )
-        self.log_box.insert("end", log_entry)
-        self.log_box.see("end")
 
-        self.update_canvas_visuals(telemetry['infected_nodes'], telemetry['active_defenses'])
-        self.update_plot(telemetry['step'], telemetry['threat_level_pct'], telemetry['infected_nodes'])
+        self.log_box.insert('end', log_entry)
+        self.log_box.see('end')
 
-        self.loop_job = self.after(500, self.run_loop)
+        self.loop_job = self.after(1000, self.run_loop)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     app = SimulatorApp()
     app.mainloop()
