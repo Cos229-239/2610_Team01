@@ -2,10 +2,10 @@
 
 Start here. Keep this README updated with your team name, members, and a short plan.
 
-TEAM 1
-David Hughes-Snider
-Garret Anderson
-Tristan Herrera
+TEAM 1: 
+David Hughes-Snider,
+Garret Anderson,
+Tristan Herrera,
 Ryan Strong
 
 Plan:
