@@ -17,8 +17,14 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
 
+        # Explicitly initialize mouse coordinates
+        self.mouse_x: float = 0.0
+        self.mouse_y: float = 0.0
+
+        # Event Bindings
         self.bind("<Button-1>", self._on_click)
         self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<Motion>", self._on_mouse_move)
 
     def set_mode(self, mode: str):
         self.mode = mode
@@ -42,6 +48,10 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
+        # Update mouse coordinates on click
+        self.mouse_x = float(event.x)
+        self.mouse_y = float(event.y)
+
         clicked_idx = self._get_node_at_pos(event.x, event.y)
 
         if self.mode == "ADD_NODE":
@@ -52,10 +62,16 @@ class NetworkCanvas(ctk.CTkCanvas):
         elif self.mode == "CONNECT_EDGE":
             if clicked_idx is not None:
                 if self.selected_node_idx is None:
+                    # Select source node
                     self.selected_node_idx = clicked_idx
                 else:
+                    # Connect source to target node
                     self.graph.add_edge(self.selected_node_idx, clicked_idx)
                     self.selected_node_idx = None
+                self.render()
+            else:
+                # Clicking empty canvas deselects active edge connection
+                self.selected_node_idx = None
                 self.render()
 
         elif self.mode == "SET_ORIGIN":
@@ -68,10 +84,19 @@ class NetworkCanvas(ctk.CTkCanvas):
                 self.selected_node_idx = clicked_idx
 
     def _on_drag(self, event):
+        self.mouse_x = float(event.x)
+        self.mouse_y = float(event.y)
         if self.mode == "SELECT" and self.selected_node_idx is not None and self.graph:
             node = self.graph.nodes[self.selected_node_idx]
             node.x = event.x
             node.y = event.y
+            self.render()
+
+    def _on_mouse_move(self, event):
+        self.mouse_x = float(event.x)
+        self.mouse_y = float(event.y)
+        # Redraw line while actively connecting an edge
+        if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             self.render()
 
     def render(self):
@@ -79,26 +104,57 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
-        # 1. Draw Edges
+        # 1. Draw Existing Network Edges
         for u, v in self.graph.edges:
             if u < len(self.graph.nodes) and v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[u], self.graph.nodes[v]
                 self.create_line(n1.x, n1.y, n2.x, n2.y, fill="#444444", width=2)
 
-        # 2. Draw Nodes
+        # 2. Draw Live Rubberband Line 
+        if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
+            if self.selected_node_idx < len(self.graph.nodes):
+                source_node = self.graph.nodes[self.selected_node_idx]
+                self.create_line(
+                    source_node.x, source_node.y,
+                    self.mouse_x, self.mouse_y,
+                    fill="#FFD54F", width=2, dash=(4, 4)
+                )
+
+        # 3. Draw Nodes
         dot_radius = 8
         for i, node in enumerate(self.graph.nodes):
             color = STATUS_COLORS.get(node.status, "#69F0AE")
 
-            # Draw glowing ring around Patient Zero
-            if node.is_patient_zero:
+            # A. Highlight Source Node in Edge Connection Mode (Gold Halo)
+            if self.mode == "CONNECT_EDGE" and i == self.selected_node_idx:
+                self.create_oval(
+                    node.x - 16, node.y - 16,
+                    node.x + 16, node.y + 16,
+                    outline="#FFD54F", width=3
+                )
+                self.create_oval(
+                    node.x - 12, node.y - 12,
+                    node.x + 12, node.y + 12,
+                    outline="#FFECB3", width=1
+                )
+
+            # B. Highlight Patient Zero (Red Ring)
+            elif node.is_patient_zero:
                 self.create_oval(
                     node.x - 14, node.y - 14,
                     node.x + 14, node.y + 14,
-                    outline="#FFFFFF", width=3
+                    outline="#FF5252", width=2
                 )
 
-            # Draw Node Body
+            # C. Selected Node in Move Mode (White Ring)
+            elif self.mode == "SELECT" and i == self.selected_node_idx:
+                self.create_oval(
+                    node.x - 12, node.y - 12,
+                    node.x + 12, node.y + 12,
+                    outline="#FFFFFF", width=2
+                )
+
+            # Draw Main Node Body
             self.create_oval(
                 node.x - dot_radius, node.y - dot_radius,
                 node.x + dot_radius, node.y + dot_radius,
@@ -107,4 +163,4 @@ class NetworkCanvas(ctk.CTkCanvas):
 
             # Node Label
             label = f"{node.id} (P0)" if node.is_patient_zero else node.id
-            self.create_text(node.x, node.y - 16, text=label, fill="#CCCCCC", font=("Arial", 8, "bold"))
+            self.create_text(node.x, node.y - 18, text=label, fill="#CCCCCC", font=("Arial", 8, "bold"))
