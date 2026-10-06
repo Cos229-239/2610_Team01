@@ -1,7 +1,6 @@
-# ui/canvas_view.py
 import customtkinter as ctk
-from typing import Optional, Callable
-from core.topology import NetworkGraph, Node
+from typing import Optional
+from core.topology import NetworkGraph
 
 STATUS_COLORS = {
     "INFECTED": "#FF5252",
@@ -9,22 +8,17 @@ STATUS_COLORS = {
     "HEALTHY": "#69F0AE"
 }
 
+
 class NetworkCanvas(ctk.CTkCanvas):
     def __init__(self, master, **kwargs):
         super().__init__(master, bg="#1e1e1e", highlightthickness=0, **kwargs)
 
-        self.mode = "SELECT"  # Modes: "SELECT", "ADD_NODE", "CONNECT_EDGE"
+        self.mode = "SELECT"  # Modes: "SELECT", "ADD_NODE", "CONNECT_EDGE", "SET_ORIGIN"
         self.graph: Optional[NetworkGraph] = None
-        
         self.selected_node_idx: Optional[int] = None
-        self.hover_node_idx: Optional[int] = None
-        self.drag_start_x = 0
-        self.drag_start_y = 0
 
-        # Bind Mouse Events
         self.bind("<Button-1>", self._on_click)
         self.bind("<B1-Motion>", self._on_drag)
-        self.bind("<ButtonRelease-1>", self._on_release)
 
     def set_mode(self, mode: str):
         self.mode = mode
@@ -63,8 +57,10 @@ class NetworkCanvas(ctk.CTkCanvas):
                     self.graph.add_edge(self.selected_node_idx, clicked_idx)
                     self.selected_node_idx = None
                 self.render()
-            else:
-                self.selected_node_idx = None
+
+        elif self.mode == "SET_ORIGIN":
+            if clicked_idx is not None:
+                self.graph.set_patient_zero(clicked_idx)
                 self.render()
 
         elif self.mode == "SELECT":
@@ -72,47 +68,43 @@ class NetworkCanvas(ctk.CTkCanvas):
                 self.selected_node_idx = clicked_idx
 
     def _on_drag(self, event):
-        # Drag nodes around in SELECT mode
         if self.mode == "SELECT" and self.selected_node_idx is not None and self.graph:
             node = self.graph.nodes[self.selected_node_idx]
             node.x = event.x
             node.y = event.y
             self.render()
 
-    def _on_release(self, event):
-        if self.mode == "SELECT":
-            self.selected_node_idx = None
-
     def render(self):
         self.delete("all")
         if not self.graph:
             return
 
-        # Draw the Edges
+        # 1. Draw Edges
         for u, v in self.graph.edges:
             if u < len(self.graph.nodes) and v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[u], self.graph.nodes[v]
                 self.create_line(n1.x, n1.y, n2.x, n2.y, fill="#444444", width=2)
 
-        # Draws th Connection Preview Line
-        if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
-            source = self.graph.nodes[self.selected_node_idx]
-            self.create_oval(
-                source.x - 12, source.y - 12, source.x + 12, source.y + 12,
-                outline="#FFD54F", width=2
-            )
-
-        # Draws Nodes
+        # 2. Draw Nodes
         dot_radius = 8
         for i, node in enumerate(self.graph.nodes):
             color = STATUS_COLORS.get(node.status, "#69F0AE")
-            outline_color = "#FFFFFF" if i == self.selected_node_idx else ""
-            outline_width = 2 if i == self.selected_node_idx else 0
 
+            # Draw glowing ring around Patient Zero
+            if node.is_patient_zero:
+                self.create_oval(
+                    node.x - 14, node.y - 14,
+                    node.x + 14, node.y + 14,
+                    outline="#FFFFFF", width=3
+                )
+
+            # Draw Node Body
             self.create_oval(
                 node.x - dot_radius, node.y - dot_radius,
                 node.x + dot_radius, node.y + dot_radius,
-                fill=color, outline=outline_color, width=outline_width
+                fill=color, outline=""
             )
-            # Render Node Label
-            self.create_text(node.x, node.y - 14, text=node.id, fill="#CCCCCC", font=("Arial", 8))
+
+            # Node Label
+            label = f"{node.id} (P0)" if node.is_patient_zero else node.id
+            self.create_text(node.x, node.y - 16, text=label, fill="#CCCCCC", font=("Arial", 8, "bold"))

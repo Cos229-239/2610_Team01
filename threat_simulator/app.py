@@ -30,6 +30,7 @@ class SimulatorApp(ctk.CTk):
             "Move": "SELECT",
             "+ Node": "ADD_NODE",
             "+ Edge": "CONNECT_EDGE",
+            "Infect": "SET_ORIGIN",
         }
         self.net_canvas.set_mode(mode_map.get(mode_str, "SELECT"))
 
@@ -97,7 +98,7 @@ class SimulatorApp(ctk.CTk):
         # Segmented Button for Canvas Editing Mode
         self.mode_selector = ctk.CTkSegmentedButton(
             top_ctrl,
-            values=["Move", "+ Node", "+ Edge"],
+            values=["Move", "+ Node", "+ Edge", "Infect"],
             command=self._on_mode_change,
         )
         self.mode_selector.set("Move")
