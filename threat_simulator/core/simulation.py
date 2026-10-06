@@ -9,6 +9,8 @@ except ImportError:
     network_engine = None
     HAS_CPP_ENGINE = False
 
+
+@dataclass
 class TelemetryData:
 
     step: int
@@ -29,12 +31,10 @@ class TelemetryData:
 
 
 class SimulationEngine:
-
     def __init__(self):
         self.step_counter: int = 0
 
-        if HAS_CPP_ENGINE:
-
+        if HAS_CPP_ENGINE and network_engine is not None:
             if hasattr(network_engine, "GraphManager"):
                 self._cpp_engine = network_engine.GraphManager()
             elif hasattr(network_engine, "NetworkEngine"):
@@ -48,7 +48,6 @@ class SimulationEngine:
         self.step_counter = 0
 
     def sync_topology_to_cpp(self, graph: NetworkGraph) -> None:
-
         if not HAS_CPP_ENGINE or self._cpp_engine is None:
             return
 
@@ -81,7 +80,6 @@ class SimulationEngine:
         if HAS_CPP_ENGINE and self._cpp_engine is not None:
             self.sync_topology_to_cpp(graph)
 
-
             if hasattr(self._cpp_engine, "run_step_telemetry"):
                 res = self._cpp_engine.run_step_telemetry(
                     self.step_counter, inf_rate, def_power
@@ -95,12 +93,13 @@ class SimulationEngine:
                     active_defenses=res.active_defenses,
                     threat_level_pct=res.threat_level_pct,
                 )
-
             elif hasattr(self._cpp_engine, "get_all_nodes"):
                 cpp_nodes = self._cpp_engine.get_all_nodes()
                 infected_cnt = sum(1 for n in cpp_nodes if n.status == "INFECTED")
                 threat_pct = (infected_cnt / float(total_nodes or 1)) * 100.0
-                status = "CRITICAL OUTBREAK" if threat_pct > 75.0 else "CONTAINMENT ACTIVE"
+                status = (
+                    "CRITICAL OUTBREAK" if threat_pct > 75.0 else "CONTAINMENT ACTIVE"
+                )
 
                 telemetry = TelemetryData(
                     step=self.step_counter,
