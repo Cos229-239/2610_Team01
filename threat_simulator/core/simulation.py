@@ -1,7 +1,7 @@
 from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional, Dict
-from core.topology import NetworkGraph, Node
+from typing import List, Set
+from core.topology import NetworkGraph
 
 try:
     import network_engine
@@ -36,28 +36,25 @@ class SimulationEngine:
     def reset(self) -> None:
         self.step_counter = 0
 
-    def _bfs_infection_spread(self, graph: NetworkGraph, depth_limit: int) -> List[int]:
-        """Calculates infected node indices using BFS starting from Patient Zero."""
+    def _bfs_infection_spread(self, graph: NetworkGraph, depth_limit: int) -> Set[int]:
         if not graph.nodes:
-            return []
+            return set()
 
         start_idx = graph.get_patient_zero_index()
-        
-        # Build adjacency list
         adj = {i: [] for i in range(len(graph.nodes))}
-        for u, v in graph.edges:
-            adj[u].append(v)
-            adj[v].append(u)
+        for edge in graph.edges:
+            adj[edge.u].append(edge.v)
+            adj[edge.v].append(edge.u)
 
         visited = {start_idx}
         queue = deque([(start_idx, 0)])
-        infected_indices = []
+        infected_indices = set()
 
         while queue:
             curr, dist = queue.popleft()
             if dist > depth_limit:
                 continue
-            infected_indices.append(curr)
+            infected_indices.add(curr)
 
             for neighbor in adj[curr]:
                 if neighbor not in visited:
@@ -73,17 +70,13 @@ class SimulationEngine:
         if total_nodes == 0:
             return TelemetryData(self.step_counter, "NO NODES", 0, 0, 0, 0.0)
 
-        # Rate controls how many BFS distance hops are breached per step
         effective_rate = max(0.1, inf_rate - (def_power * 0.7))
         bfs_depth = int(self.step_counter * effective_rate * 2)
 
-        # Get infected nodes starting from Patient Zero
-        infected_set = set(self._bfs_infection_spread(graph, depth_limit=bfs_depth))
-        
-        # Get warning nodes (1 hop further)
-        warning_set = set(self._bfs_infection_spread(graph, depth_limit=bfs_depth + 1)) - infected_set
+        infected_set = self._bfs_infection_spread(graph, depth_limit=bfs_depth)
+        warning_set = self._bfs_infection_spread(graph, depth_limit=bfs_depth + 1) - infected_set
 
-        # Update node visual status
+        # 1. Update Node Statuses
         for i, node in enumerate(graph.nodes):
             if i in infected_set:
                 node.status = "INFECTED"
@@ -91,6 +84,20 @@ class SimulationEngine:
                 node.status = "WARNING"
             else:
                 node.status = "HEALTHY"
+
+        # 2. Update Edge Statuses (Highlight edges where infection flows)
+        for edge in graph.edges:
+            u_infected = edge.u in infected_set
+            v_infected = edge.v in infected_set
+            u_warning = edge.u in warning_set or u_infected
+            v_warning = edge.v in warning_set or v_infected
+
+            if u_infected and v_infected:
+                edge.status = "INFECTED"  # Fully compromised connection
+            elif u_warning and v_warning:
+                edge.status = "WARNING"   # Threat spreading across edge
+            else:
+                edge.status = "HEALTHY"
 
         infected_cnt = len(infected_set)
         threat_pct = (infected_cnt / float(total_nodes)) * 100.0
