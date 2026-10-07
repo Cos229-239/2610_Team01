@@ -1,10 +1,11 @@
 import customtkinter as ctk
 from typing import Optional
 from core.topology import NetworkGraph
+from core.node_types import NODE_TYPES
 
 STATUS_COLORS = {
     "INFECTED": "#FF5252",
-    "WARNING": "#448AFF",
+    "WARNING": "#FFB74D",
     "HEALTHY": "#69F0AE"
 }
 
@@ -14,18 +15,13 @@ EDGE_COLORS = {
     "HEALTHY": "#444444"
 }
 
-EDGE_WIDTHS = {
-    "INFECTED": 3,
-    "WARNING": 2,
-    "HEALTHY": 1
-}
-
 
 class NetworkCanvas(ctk.CTkCanvas):
     def __init__(self, master, **kwargs):
         super().__init__(master, bg="#1e1e1e", highlightthickness=0, **kwargs)
 
         self.mode = "SELECT"
+        self.active_node_type = "PC"  # Selected type when adding nodes
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
 
@@ -41,11 +37,14 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.selected_node_idx = None
         self.render()
 
+    def set_active_node_type(self, node_type: str):
+        self.active_node_type = node_type
+
     def set_graph(self, graph: NetworkGraph):
         self.graph = graph
         self.render()
 
-    def _get_node_at_pos(self, x: float, y: float, radius: float = 12.0) -> Optional[int]:
+    def _get_node_at_pos(self, x: float, y: float, radius: float = 14.0) -> Optional[int]:
         if not self.graph:
             return None
         for i, node in enumerate(self.graph.nodes):
@@ -64,7 +63,8 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
-                self.graph.add_node(event.x, event.y)
+                # Add node with active node type
+                self.graph.add_node(event.x, event.y, node_type=self.active_node_type)
                 self.render()
 
         elif self.mode == "CONNECT_EDGE":
@@ -108,64 +108,37 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
-        # 1. Draw Network Edges with Dynamic Highlighting
         for edge in self.graph.edges:
             if edge.u < len(self.graph.nodes) and edge.v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
-                edge_color = EDGE_COLORS.get(edge.status, "#444444")
-                edge_width = EDGE_WIDTHS.get(edge.status, 1)
-
                 self.create_line(
                     n1.x, n1.y, n2.x, n2.y,
-                    fill=edge_color, width=edge_width
+                    fill=EDGE_COLORS.get(edge.status, "#444444"),
+                    width=2 if edge.status != "HEALTHY" else 1
                 )
 
-        # 2. Draw Live Rubberband Line (Connecting Mode)
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             if self.selected_node_idx < len(self.graph.nodes):
-                source_node = self.graph.nodes[self.selected_node_idx]
-                self.create_line(
-                    source_node.x, source_node.y,
-                    self.mouse_x, self.mouse_y,
-                    fill="#FFD54F", width=2, dash=(4, 4)
-                )
+                src = self.graph.nodes[self.selected_node_idx]
+                self.create_line(src.x, src.y, self.mouse_x, self.mouse_y, fill="#FFD54F", width=2, dash=(4, 4))
 
-        # 3. Draw Nodes
-        dot_radius = 8
         for i, node in enumerate(self.graph.nodes):
-            color = STATUS_COLORS.get(node.status, "#69F0AE")
+            type_cfg = NODE_TYPES.get(node.node_type, NODE_TYPES["PC"])
+            radius = type_cfg.radius
 
-            # A. Gold Ring for Connection Source Node
-            if self.mode == "CONNECT_EDGE" and i == self.selected_node_idx:
-                self.create_oval(
-                    node.x - 16, node.y - 16,
-                    node.x + 16, node.y + 16,
-                    outline="#FFD54F", width=3
-                )
+            if node.status in ("INFECTED", "WARNING"):
+                fill_color = STATUS_COLORS[node.status]
+            else:
+                fill_color = type_cfg.color
 
-            # B. Red Ring for Patient Zero
-            elif node.is_patient_zero:
-                self.create_oval(
-                    node.x - 14, node.y - 14,
-                    node.x + 14, node.y + 14,
-                    outline="#FF5252", width=2
-                )
+            if node.is_patient_zero:
+                self.create_oval(node.x - radius - 5, node.y - radius - 5, node.x + radius + 5, node.y + radius + 5, outline="#FF5252", width=2)
+            elif self.mode == "CONNECT_EDGE" and i == self.selected_node_idx:
+                self.create_oval(node.x - radius - 6, node.y - radius - 6, node.x + radius + 6, node.y + radius + 6, outline="#FFD54F", width=3)
 
-            # C. White Ring for Move Mode Selection
-            elif self.mode == "SELECT" and i == self.selected_node_idx:
-                self.create_oval(
-                    node.x - 12, node.y - 12,
-                    node.x + 12, node.y + 12,
-                    outline="#FFFFFF", width=2
-                )
+            self.create_oval(node.x - radius, node.y - radius, node.x + radius, node.y + radius, fill=fill_color, outline="")
 
-            # Draw Node Core
-            self.create_oval(
-                node.x - dot_radius, node.y - dot_radius,
-                node.x + dot_radius, node.y + dot_radius,
-                fill=color, outline=""
-            )
-
-            # Node Label
-            label = f"{node.id} (P0)" if node.is_patient_zero else node.id
-            self.create_text(node.x, node.y - 18, text=label, fill="#CCCCCC", font=("Arial", 8, "bold"))
+            label_text = f"{type_cfg.symbol} {node.id}"
+            if node.is_patient_zero:
+                label_text += " (P0)"
+            self.create_text(node.x, node.y - radius - 10, text=label_text, fill="#FFFFFF", font=("Arial", 9, "bold"))

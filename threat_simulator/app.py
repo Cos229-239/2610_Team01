@@ -16,16 +16,15 @@ class SimulatorApp(ctk.CTk):
         self.is_running = False
         self.loop_job = None
 
-        # Build UI (Will find methods defined below)
         self._build_ui()
         self._on_level_change("Level 1: Ring Topology")
 
     # ------------------------------------------------------------------
-    # Event Callbacks 
+    # Event Callbacks
     # ------------------------------------------------------------------
 
     def _on_mode_change(self, mode_str: str):
-        """Callback for the segmented button (+ Node, + Edge, Move)."""
+        """Callback for the segmented button (+ Node, + Edge, Move, Infect)."""
         mode_map = {
             "Move": "SELECT",
             "+ Node": "ADD_NODE",
@@ -33,6 +32,13 @@ class SimulatorApp(ctk.CTk):
             "Infect": "SET_ORIGIN",
         }
         self.net_canvas.set_mode(mode_map.get(mode_str, "SELECT"))
+
+    def _on_device_type_change(self, selected_type: str):
+        """Callback when choosing a device type from the Device dropdown."""
+        self.net_canvas.set_active_node_type(selected_type)
+        # Automatically set canvas mode to add node when changing device type
+        self.mode_selector.set("+ Node")
+        self.net_canvas.set_mode("ADD_NODE")
 
     def _clear_canvas(self):
         """Clears all nodes and edges from the canvas."""
@@ -104,13 +110,25 @@ class SimulatorApp(ctk.CTk):
         self.mode_selector.set("Move")
         self.mode_selector.grid(row=0, column=2, padx=10, pady=5)
 
+        # Device Selection Menu for Node Placement
+        ctk.CTkLabel(top_ctrl, text="Device:", font=("Arial", 11)).grid(
+            row=0, column=3, padx=(10, 2), pady=5
+        )
+        self.device_menu = ctk.CTkOptionMenu(
+            top_ctrl,
+            values=["PC", "Router", "Modem"],
+            width=90,
+            command=self._on_device_type_change,
+        )
+        self.device_menu.grid(row=0, column=4, padx=5, pady=5)
+
         ctk.CTkButton(
             top_ctrl,
             text="Clear",
             width=60,
             fg_color="#C62828",
             command=self._clear_canvas,
-        ).grid(row=0, column=3, padx=5, pady=5)
+        ).grid(row=0, column=5, padx=5, pady=5)
 
         # Sliders
         slider_frame = ctk.CTkFrame(left_frame)
