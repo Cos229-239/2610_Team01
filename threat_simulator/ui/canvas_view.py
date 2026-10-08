@@ -1,17 +1,19 @@
 import customtkinter as ctk
 from typing import Optional
 from core.topology import NetworkGraph
+from PIL import Image, ImageTk
+import os
 
 STATUS_COLORS = {
     "INFECTED": "#FF5252",
-    "WARNING": "#448AFF",
+    "WARNING": "#FFB74D",
     "HEALTHY": "#69F0AE"
 }
 
 EDGE_COLORS = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
-    "HEALTHY": "#444444"
+    "HEALTHY": "#8b5a2b"
 }
 
 EDGE_WIDTHS = {
@@ -21,9 +23,39 @@ EDGE_WIDTHS = {
 }
 
 
+class SpriteSheetManager:
+    def __init__(self, atlas_path="assets/zombie_spritesheet_v1.png"):
+        if os.path.exists(atlas_path):
+            self.atlas = Image.open(atlas_path).convert("RGBA")
+        else:
+            self.atlas = Image.new("RGBA", (512, 256), (0, 0, 0, 0))
+            
+        self.regions = {
+            "BIOHAZARD": (0, 0, 128, 128),
+            "SKULL": (135, 2, 167, 34),
+            "CRAWLER": (16, 130, 48, 162),
+            "SHAMBLER": (80, 130, 112, 162),
+            "ROUTER": (304, 130, 336, 162),
+            "LAPTOP": (368, 130, 400, 162)
+        }
+        self._cache = {}
+
+    def get_sprite(self, name, size=(32, 32)):
+        cache_key = (name, size)
+        if name not in self.regions:
+            return None
+        if cache_key not in self._cache:
+            crop_box = self.regions[name]
+            sprite = self.atlas.crop(crop_box)
+            if size:
+                sprite = sprite.resize(size, Image.Resampling.LANCZOS)
+            self._cache[cache_key] = ImageTk.PhotoImage(sprite)
+        return self._cache[cache_key]
+
+
 class NetworkCanvas(ctk.CTkCanvas):
     def __init__(self, master, **kwargs):
-        super().__init__(master, bg="#1e1e1e", highlightthickness=0, **kwargs)
+        super().__init__(master, bg="#d8ccb0", highlightthickness=0, **kwargs)
 
         self.mode = "SELECT"
         self.graph: Optional[NetworkGraph] = None
@@ -35,7 +67,9 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.bind("<Button-1>", self._on_click)
         self.bind("<B1-Motion>", self._on_drag)
         self.bind("<Motion>", self._on_mouse_move)
-
+        
+        self.sprite_manager = SpriteSheetManager()
+        
     def set_mode(self, mode: str):
         self.mode = mode
         self.selected_node_idx = None
@@ -45,7 +79,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.graph = graph
         self.render()
 
-    def _get_node_at_pos(self, x: float, y: float, radius: float = 12.0) -> Optional[int]:
+    def _get_node_at_pos(self, x: float, y: float, radius: float = 16.0) -> Optional[int]:
         if not self.graph:
             return None
         for i, node in enumerate(self.graph.nodes):
@@ -108,11 +142,10 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
-        # 1. Draw Network Edges with Dynamic Highlighting
         for edge in self.graph.edges:
             if edge.u < len(self.graph.nodes) and edge.v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
-                edge_color = EDGE_COLORS.get(edge.status, "#444444")
+                edge_color = EDGE_COLORS.get(edge.status, "#555555")
                 edge_width = EDGE_WIDTHS.get(edge.status, 1)
 
                 self.create_line(
@@ -120,52 +153,45 @@ class NetworkCanvas(ctk.CTkCanvas):
                     fill=edge_color, width=edge_width
                 )
 
-        # 2. Draw Live Rubberband Line (Connecting Mode)
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             if self.selected_node_idx < len(self.graph.nodes):
                 source_node = self.graph.nodes[self.selected_node_idx]
                 self.create_line(
                     source_node.x, source_node.y,
                     self.mouse_x, self.mouse_y,
-                    fill="#FFD54F", width=2, dash=(4, 4)
+                    fill="#C62828", width=2, dash=(4, 4)
                 )
 
-        # 3. Draw Nodes
-        dot_radius = 8
         for i, node in enumerate(self.graph.nodes):
-            color = STATUS_COLORS.get(node.status, "#69F0AE")
+            if node.is_patient_zero:
+                self.create_oval(
+                    node.x - 32, node.y - 32,
+                    node.x + 32, node.y + 32,
+                    fill="#ff3b3b", outline="", stipple="gray50"
+                )
+                self.create_oval(
+                    node.x - 20, node.y - 20,
+                    node.x + 20, node.y + 20,
+                    fill="#ff7b00", outline="#D32F2F", width=2
+                )
 
-            # A. Gold Ring for Connection Source Node
             if self.mode == "CONNECT_EDGE" and i == self.selected_node_idx:
-                self.create_oval(
-                    node.x - 16, node.y - 16,
-                    node.x + 16, node.y + 16,
-                    outline="#FFD54F", width=3
-                )
-
-            # B. Red Ring for Patient Zero
-            elif node.is_patient_zero:
-                self.create_oval(
-                    node.x - 14, node.y - 14,
-                    node.x + 14, node.y + 14,
-                    outline="#FF5252", width=2
-                )
-
-            # C. White Ring for Move Mode Selection
+                self.create_oval(node.x - 22, node.y - 22, node.x + 22, node.y + 22, outline="#FFD54F", width=3)
             elif self.mode == "SELECT" and i == self.selected_node_idx:
-                self.create_oval(
-                    node.x - 12, node.y - 12,
-                    node.x + 12, node.y + 12,
-                    outline="#FFFFFF", width=2
-                )
+                self.create_oval(node.x - 20, node.y - 20, node.x + 20, node.y + 20, outline="#333333", width=2)
 
-            # Draw Node Core
-            self.create_oval(
-                node.x - dot_radius, node.y - dot_radius,
-                node.x + dot_radius, node.y + dot_radius,
-                fill=color, outline=""
-            )
+            if node.is_patient_zero:
+                sprite_img = self.sprite_manager.get_sprite("BIOHAZARD", size=(32, 32))
+            elif getattr(node, "status", "") == "INFECTED":
+                sprite_img = self.sprite_manager.get_sprite("CRAWLER", size=(32, 32))
+            elif getattr(node, "is_router", False):
+                sprite_img = self.sprite_manager.get_sprite("ROUTER", size=(32, 32))
+            else:
+                sprite_img = self.sprite_manager.get_sprite("SKULL", size=(28, 28))
 
-            # Node Label
-            label = f"{node.id} (P0)" if node.is_patient_zero else node.id
-            self.create_text(node.x, node.y - 18, text=label, fill="#CCCCCC", font=("Arial", 8, "bold"))
+            if sprite_img:
+                self.create_image(node.x, node.y, image=sprite_img, anchor="center")
+
+            label = "PATIENT ZERO" if node.is_patient_zero else node.id
+            font_color = "#B71C1C" if node.is_patient_zero else "#222222"
+            self.create_text(node.x, node.y + 22, text=label, fill=font_color, font=("Courier", 8, "bold"))
