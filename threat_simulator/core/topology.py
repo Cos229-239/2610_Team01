@@ -13,6 +13,8 @@ class Node:
     y: float = 0.0
     is_patient_zero: bool = False
 
+    infection_step: int = -1
+
 
 @dataclass
 class Edge:

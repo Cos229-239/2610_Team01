@@ -79,9 +79,15 @@ class SimulationEngine:
         # 1. Update Node Statuses
         for i, node in enumerate(graph.nodes):
             if i in infected_set:
+
+                if node.infection_step == -1:
+                    node.infection_step = self.step_counter
+
                 node.status = "INFECTED"
+
             elif i in warning_set:
                 node.status = "WARNING"
+
             else:
                 node.status = "HEALTHY"
 
