@@ -131,8 +131,6 @@ class TopologyGenerator:
         edges = []
         for i in range(1, num_nodes):
             edges.append(Edge(u=0, v=i))
-            if i % 2 == 0:
-                edges.append(Edge(u=i, v=(i % (num_nodes - 1)) + 1))
 
         return NetworkGraph(nodes=nodes, edges=edges)
 
