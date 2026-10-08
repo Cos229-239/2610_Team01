@@ -20,6 +20,21 @@ class TelemetryData:
     active_defenses: int
     threat_level_pct: float
 
+    @property
+    def sim_time_seconds(self) -> int:
+        """Each simulation step = 1 second of simulation time."""
+        return self.step
+
+    def format_log(self) -> str:
+        engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Fallback]"
+        return (
+            f"{engine_tag} t = {self.sim_time_seconds:3d}s    |    {self.status}\n"
+            f"  |-- Infected Nodes: {self.infected_nodes}/{self.total_nodes}\n"
+            f"  |-- Active ADefenses: {self.active_defenses}\n"
+            f"  |-- Threat Level: {self.threat_level_pct:.1f}%\n\n"
+            )
+
+    """
     def format_log(self) -> str:
         engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Fallback]"
         return (
@@ -27,7 +42,7 @@ class TelemetryData:
             f" ├── Active Defenses: {self.active_defenses}\n"
             f" └── Threat Level: {self.threat_level_pct:.1f}%\n\n"
         )
-
+    """
 
 class SimulationEngine:
     def __init__(self):
