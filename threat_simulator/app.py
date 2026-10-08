@@ -206,6 +206,8 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel.clear()
         for node in self.graph.nodes:
             node.status = "HEALTHY"
+        for edge in self.graph.edges:
+            edge.status = "HEALTHY"
         self.net_canvas.render()
 
     def run_loop(self):
