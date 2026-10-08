@@ -3,6 +3,7 @@ from typing import Optional
 from core.topology import NetworkGraph
 from PIL import Image, ImageTk
 import os
+from core.node_types import NODE_TYPES
 
 STATUS_COLORS = {
     "INFECTED": "#FF5252",
@@ -14,12 +15,6 @@ EDGE_COLORS = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
     "HEALTHY": "#8b5a2b"
-}
-
-EDGE_WIDTHS = {
-    "INFECTED": 3,
-    "WARNING": 2,
-    "HEALTHY": 1
 }
 
 
@@ -58,6 +53,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         super().__init__(master, bg="#d8ccb0", highlightthickness=0, **kwargs)
 
         self.mode = "SELECT"
+        self.active_node_type = "PC"  # Selected type when adding nodes
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
 
@@ -75,11 +71,15 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.selected_node_idx = None
         self.render()
 
+    def set_active_node_type(self, node_type: str):
+        self.active_node_type = node_type
+
     def set_graph(self, graph: NetworkGraph):
         self.graph = graph
         self.render()
 
     def _get_node_at_pos(self, x: float, y: float, radius: float = 16.0) -> Optional[int]:
+    def _get_node_at_pos(self, x: float, y: float, radius: float = 14.0) -> Optional[int]:
         if not self.graph:
             return None
         for i, node in enumerate(self.graph.nodes):
@@ -98,7 +98,8 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
-                self.graph.add_node(event.x, event.y)
+                # Add node with active node type
+                self.graph.add_node(event.x, event.y, node_type=self.active_node_type)
                 self.render()
 
         elif self.mode == "CONNECT_EDGE":
@@ -150,7 +151,8 @@ class NetworkCanvas(ctk.CTkCanvas):
 
                 self.create_line(
                     n1.x, n1.y, n2.x, n2.y,
-                    fill=edge_color, width=edge_width
+                    fill=EDGE_COLORS.get(edge.status, "#444444"),
+                    width=2 if edge.status != "HEALTHY" else 1
                 )
 
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
@@ -195,3 +197,26 @@ class NetworkCanvas(ctk.CTkCanvas):
             label = "PATIENT ZERO" if node.is_patient_zero else node.id
             font_color = "#B71C1C" if node.is_patient_zero else "#222222"
             self.create_text(node.x, node.y + 22, text=label, fill=font_color, font=("Courier", 8, "bold"))
+                src = self.graph.nodes[self.selected_node_idx]
+                self.create_line(src.x, src.y, self.mouse_x, self.mouse_y, fill="#FFD54F", width=2, dash=(4, 4))
+
+        for i, node in enumerate(self.graph.nodes):
+            type_cfg = NODE_TYPES.get(node.node_type, NODE_TYPES["PC"])
+            radius = type_cfg.radius
+
+            if node.status in ("INFECTED", "WARNING"):
+                fill_color = STATUS_COLORS[node.status]
+            else:
+                fill_color = type_cfg.color
+
+            if node.is_patient_zero:
+                self.create_oval(node.x - radius - 5, node.y - radius - 5, node.x + radius + 5, node.y + radius + 5, outline="#FF5252", width=2)
+            elif self.mode == "CONNECT_EDGE" and i == self.selected_node_idx:
+                self.create_oval(node.x - radius - 6, node.y - radius - 6, node.x + radius + 6, node.y + radius + 6, outline="#FFD54F", width=3)
+
+            self.create_oval(node.x - radius, node.y - radius, node.x + radius, node.y + radius, fill=fill_color, outline="")
+
+            label_text = f"{type_cfg.symbol} {node.id}"
+            if node.is_patient_zero:
+                label_text += " (P0)"
+            self.create_text(node.x, node.y - radius - 10, text=label_text, fill="#FFFFFF", font=("Arial", 9, "bold"))
