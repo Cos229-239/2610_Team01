@@ -12,7 +12,6 @@ class Node:
     x: float = 0.0
     y: float = 0.0
     is_patient_zero: bool = False
-
     infection_step: int = -1
 
 
@@ -21,6 +20,7 @@ class Edge:
     u: int
     v: int
     status: str = "HEALTHY"
+    is_firewall: bool = False  # Tracks active firewall barriers
 
 
 @dataclass
@@ -74,10 +74,67 @@ class NetworkGraph:
                 return i
         return 0
 
+    def find_edge_near_point(
+        self, px: float, py: float, tolerance: float = 10.0
+    ) -> Optional[int]:
+        """Calculates distance from point (px, py) to all edges and returns
+
+        the index of the edge closest to the point within a tolerance radius.
+        """
+        for index, edge in enumerate(self.edges):
+            if edge.u < len(self.nodes) and edge.v < len(self.nodes):
+                n1, n2 = self.nodes[edge.u], self.nodes[edge.v]
+
+                dx = n2.x - n1.x
+                dy = n2.y - n1.y
+                if dx == 0 and dy == 0:
+                    continue
+
+                # Projection parameter t along line segment
+                t = max(
+                    0.0,
+                    min(
+                        1.0,
+                        ((px - n1.x) * dx + (py - n1.y) * dy) / (dx * dx + dy * dy),
+                    ),
+                )
+
+                # Projection coordinates
+                proj_x = n1.x + t * dx
+                proj_y = n1.y + t * dy
+
+                # Distance calculation
+                dist = math.hypot(px - proj_x, py - proj_y)
+                if dist <= tolerance:
+                    return index
+        return None
+
+    def toggle_firewall_at_index(self, index: int) -> bool:
+        """Toggles an active firewall barrier on an edge by index."""
+        if 0 <= index < len(self.edges):
+            self.edges[index].is_firewall = not self.edges[index].is_firewall
+            return True
+        return False
+
     def clear(self):
         """Clears all nodes and edges from the graph instance."""
         self.nodes.clear()
         self.edges.clear()
+
+
+    # In core/topology.py inside NetworkGraph:
+
+    def reset_states(self):
+        """Resets all node and edge statuses and disarms all active firewalls."""
+        p0_idx = self.get_patient_zero_index() if self.nodes else 0
+
+        for i, node in enumerate(self.nodes):
+            node.status = "HEALTHY"
+            node.is_patient_zero = (i == p0_idx)
+
+        for edge in self.edges:
+            edge.status = "HEALTHY"
+            edge.is_firewall = False
 
 
 class TopologyGenerator:
@@ -113,7 +170,7 @@ class TopologyGenerator:
 
         edges = []
         for i in range(num_nodes):
-            for j in range(i+1, num_nodes):
+            for j in range(i + 1, num_nodes):
                 edges.append(Edge(u=i, v=j))
 
         return NetworkGraph(nodes=nodes, edges=edges)

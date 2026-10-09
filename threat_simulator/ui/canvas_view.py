@@ -54,7 +54,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         super().__init__(master, bg="#d8ccb0", highlightthickness=0, **kwargs)
 
         self.mode = "SELECT"
-        self.active_node_type = "PC"  # Selected type when adding nodes
+        self.active_node_type = "PC"
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
 
@@ -70,6 +70,7 @@ class NetworkCanvas(ctk.CTkCanvas):
     def set_mode(self, mode: str):
         self.mode = mode
         self.selected_node_idx = None
+        self.config(cursor="")
         self.render()
 
     def set_active_node_type(self, node_type: str):
@@ -96,11 +97,21 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         self.mouse_x = float(event.x)
         self.mouse_y = float(event.y)
+
+        # -------------------------------------------------------------
+        # FIREWALL BARRIER TOGGLE
+        # -------------------------------------------------------------
+        if self.mode == "FIREWALL":
+            edge_idx = self.graph.find_edge_near_point(event.x, event.y)
+            if edge_idx is not None:
+                self.graph.toggle_firewall_at_index(edge_idx)
+                self.render()
+            return
+
         clicked_idx = self._get_node_at_pos(event.x, event.y)
 
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
-                # Add node with active node type
                 self.graph.add_node(
                     event.x, event.y, node_type=self.active_node_type
                 )
@@ -143,7 +154,11 @@ class NetworkCanvas(ctk.CTkCanvas):
     def _on_mouse_move(self, event):
         self.mouse_x = float(event.x)
         self.mouse_y = float(event.y)
-        if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
+
+        if self.mode == "FIREWALL" and self.graph:
+            hovered_edge = self.graph.find_edge_near_point(event.x, event.y)
+            self.config(cursor="X_cursor" if hovered_edge is not None else "crosshair")
+        elif self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             self.render()
 
     def render(self):
@@ -151,16 +166,36 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
-        # 1. Render Edges
+        # 1. Render Edges & Firewall Security Barriers
         for edge in self.graph.edges:
             if edge.u < len(self.graph.nodes) and edge.v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
-                edge_color = EDGE_COLORS.get(edge.status, "#444444")
-                edge_width = 2 if edge.status != "HEALTHY" else 1
 
-                self.create_line(
-                    n1.x, n1.y, n2.x, n2.y, fill=edge_color, width=edge_width
-                )
+                if getattr(edge, "is_firewall", False):
+                    # Outer cyan glow wall
+                    self.create_line(
+                        n1.x, n1.y, n2.x, n2.y, fill="#00E5FF", width=5
+                    )
+                    # Core white beam
+                    self.create_line(
+                        n1.x, n1.y, n2.x, n2.y, fill="#FFFFFF", width=2
+                    )
+
+                    # Midpoint shield badge
+                    mid_x, mid_y = (n1.x + n2.x) / 2, (n1.y + n2.y) / 2
+                    self.create_rectangle(
+                        mid_x - 7, mid_y - 7, mid_x + 7, mid_y + 7,
+                        fill="#00B0FF", outline="#FFFFFF", width=1
+                    )
+                    self.create_text(
+                        mid_x, mid_y, text="🛡", fill="#FFFFFF", font=("Arial", 8)
+                    )
+                else:
+                    edge_color = EDGE_COLORS.get(edge.status, "#444444")
+                    edge_width = 2 if edge.status != "HEALTHY" else 1
+                    self.create_line(
+                        n1.x, n1.y, n2.x, n2.y, fill=edge_color, width=edge_width
+                    )
 
         # 2. Render Connection Preview Line
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
