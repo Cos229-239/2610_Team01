@@ -30,7 +30,7 @@ class TelemetryData:
         return (
             f"{engine_tag} t = {self.sim_time_seconds:3d}s    |    {self.status}\n"
             f"  |-- Infected Nodes: {self.infected_nodes}/{self.total_nodes}\n"
-            f"  |-- Active ADefenses: {self.active_defenses}\n"
+            f"  |-- Active Defenses: {self.active_defenses}\n"
             f"  |-- Threat Level: {self.threat_level_pct:.1f}%\n\n"
             )
 
