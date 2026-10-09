@@ -204,11 +204,16 @@ class SimulatorApp(ctk.CTk):
         self.pause_sim()
         self.sim_engine.reset()
         self.telemetry_panel.clear()
-        for node in self.graph.nodes:
+        for i, node in enumerate(self.graph.nodes):
             node.status = "HEALTHY"
+            # Restore initial Patient Zero (default to Node 0 if none set)
+            node.is_patient_zero = (i == 0)
+
         for edge in self.graph.edges:
             edge.status = "HEALTHY"
+
         self.net_canvas.render()
+
 
     def run_loop(self):
         if not self.is_running:
@@ -221,7 +226,77 @@ class SimulatorApp(ctk.CTk):
         self.net_canvas.render()
         self.telemetry_panel.append_log(telemetry)
 
+        # -------------------------------------------------------------
+        # ENDGAME TERMINATION CHECK
+        # -------------------------------------------------------------
+        total = telemetry.total_nodes
+        infected = telemetry.infected_nodes
+
+        if total > 0:
+            # Condition 1: Threat Neutralized (Victory)
+            if infected == 0:
+                self.pause_sim()
+                self._show_endgame_dialog(
+                    title="THREAT NEUTRALIZED",
+                    message="All infected nodes and Patient Zero have been successfully secured!",
+                    is_victory=True
+                )
+                return
+
+            # Condition 2: Entire Network Infected (Defeat)
+            elif infected == total:
+                self.pause_sim()
+                self._show_endgame_dialog(
+                    title="NETWORK COMPROMISED",
+                    message="The threat has completely taken over all network nodes!",
+                    is_victory=False
+                )
+                return
+
+        # Schedule next loop step if game is ongoing
         self.loop_job = self.after(1000, self.run_loop)
+
+        self.loop_job = self.after(1000, self.run_loop)
+
+
+    def _show_endgame_dialog(self, title: str, message: str, is_victory: bool):
+        """Displays a clean modal popup when simulation reaches an endgame state."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.geometry("420x220")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set() 
+
+        # Header Color
+        header_color = "#2E7D32" if is_victory else "#C62828"  # Green for Victory, Red for Defeat
+
+        # Title Label
+        ctk.CTkLabel(
+            dialog,
+            text=title,
+            font=("Arial", 18, "bold"),
+            text_color=header_color
+        ).pack(pady=(20, 10))
+
+        # Message Body
+        ctk.CTkLabel(
+            dialog,
+            text=message,
+            font=("Arial", 12),
+            wraplength=360,
+            justify="center"
+        ).pack(pady=10)
+
+        # OK / Close Button
+        ctk.CTkButton(
+            dialog,
+            text="Acknowledge",
+            fg_color=header_color,
+            width=120,
+            command=dialog.destroy
+        ).pack(pady=(15, 10))
+
 
 
 if __name__ == "__main__":

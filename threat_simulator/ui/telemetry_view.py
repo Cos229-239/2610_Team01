@@ -67,6 +67,11 @@ class TelemetryPanel(ctk.CTkFrame):
         self.threat_label.configure(text=f"{data.threat_level_pct:.1f}%")
         self.status_label.configure(text=data.status)
 
+        # Safely fetch sim_time_seconds with fallback to step if missing
+        sim_time = getattr(data, "sim_time_seconds", data.step)
+        if hasattr(self, "time_label"):
+            self.time_label.configure(text=f"{sim_time}s")
+
         # Colour the threat / status labels for quick visual feedback
         if data.threat_level_pct > 75:
             self.threat_label.configure(text_color="#FF5252")

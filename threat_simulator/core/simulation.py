@@ -1,10 +1,13 @@
-from collections import deque
+import random
 from dataclasses import dataclass
-from typing import List, Set
+from typing import Dict, List, Set
+from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph
 
+# Attempt C++ module import with graceful fallback
 try:
     import network_engine
+
     HAS_CPP_ENGINE = True
 except ImportError:
     network_engine = None
@@ -16,119 +19,187 @@ class TelemetryData:
     step: int
     status: str
     infected_nodes: int
+    recovered_nodes: int
     total_nodes: int
     active_defenses: int
     threat_level_pct: float
-
-    @property
-    def sim_time_seconds(self) -> int:
-        """Each simulation step = 1 second of simulation time."""
-        return self.step
+    sim_time_seconds: int = 0
 
     def format_log(self) -> str:
-        engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Fallback]"
+        engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Engine]"
         return (
-            f"{engine_tag} t = {self.sim_time_seconds:3d}s    |    {self.status}\n"
-            f"  |-- Infected Nodes: {self.infected_nodes}/{self.total_nodes}\n"
-            f"  |-- Active Defenses: {self.active_defenses}\n"
-            f"  |-- Threat Level: {self.threat_level_pct:.1f}%\n\n"
-            )
-
-    
-    def format_log(self) -> str:
-        engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Fallback]"
-        return (
-            f" ├── Infected Nodes: {self.infected_nodes}/{self.total_nodes}\n"
+            f"[STEP {self.step} | {self.sim_time_seconds}s] {engine_tag} Status: {self.status}\n"
+            f" ├── Infected: {self.infected_nodes}/{self.total_nodes}\n"
+            f" ├── Recovered/Secured: {self.recovered_nodes}\n"
             f" ├── Active Defenses: {self.active_defenses}\n"
             f" └── Threat Level: {self.threat_level_pct:.1f}%\n\n"
         )
-    
+
 
 class SimulationEngine:
     def __init__(self):
         self.step_counter: int = 0
+        self.total_recovered_count: int = 0
 
     def reset(self) -> None:
         self.step_counter = 0
+        self.total_recovered_count = 0
 
-    def _bfs_infection_spread(self, graph: NetworkGraph, depth_limit: int) -> Set[int]:
-        if not graph.nodes:
-            return set()
+    def step(
+        self, graph: NetworkGraph, inf_rate: float, def_power: float
+    ) -> TelemetryData:
+        """Executes a single simulation tick with defense blocking, node recovery,
 
-        start_idx = graph.get_patient_zero_index()
-        adj = {i: [] for i in range(len(graph.nodes))}
-        for edge in graph.edges:
-            adj[edge.u].append(edge.v)
-            adj[edge.v].append(edge.u)
-
-        visited = {start_idx}
-        queue = deque([(start_idx, 0)])
-        infected_indices = set()
-
-        while queue:
-            curr, dist = queue.popleft()
-            if dist > depth_limit:
-                continue
-            infected_indices.add(curr)
-
-            for neighbor in adj[curr]:
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    queue.append((neighbor, dist + 1))
-
-        return infected_indices
-
-    def step(self, graph: NetworkGraph, inf_rate: float, def_power: float) -> TelemetryData:
+        and Patient Zero elimination mechanics.
+        """
         self.step_counter += 1
         total_nodes = graph.node_count
 
         if total_nodes == 0:
-            return TelemetryData(self.step_counter, "NO NODES", 0, 0, 0, 0.0)
+            return TelemetryData(
+                self.step_counter,
+                "NO NODES",
+                0,
+                0,
+                0,
+                0,
+                0.0,
+                sim_time_seconds=self.step_counter,
+            )
 
-        effective_rate = max(0.1, inf_rate - (def_power * 0.7))
-        bfs_depth = int(self.step_counter * effective_rate * 2)
-
-        infected_set = self._bfs_infection_spread(graph, depth_limit=bfs_depth)
-        warning_set = self._bfs_infection_spread(graph, depth_limit=bfs_depth + 1) - infected_set
-
-        # 1. Update Node Statuses
-        for i, node in enumerate(graph.nodes):
-            if i in infected_set:
-
-                if node.infection_step == -1:
-                    node.infection_step = self.step_counter
-
-                node.status = "INFECTED"
-
-            elif i in warning_set:
-                node.status = "WARNING"
-
-            else:
-                node.status = "HEALTHY"
-
-        # 2. Update Edge Statuses (Highlight edges where infection flows)
+        # 1. Build Adjacency Map
+        adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         for edge in graph.edges:
-            u_infected = edge.u in infected_set
-            v_infected = edge.v in infected_set
-            u_warning = edge.u in warning_set or u_infected
-            v_warning = edge.v in warning_set or v_infected
+            if edge.u < total_nodes and edge.v < total_nodes:
+                adj[edge.u].append(edge.v)
+                adj[edge.v].append(edge.u)
 
-            if u_infected and v_infected:
-                edge.status = "INFECTED"  # Fully compromised connection
-            elif u_warning and v_warning:
-                edge.status = "WARNING"   # Threat spreading across edge
+        # 2. Identify Currently Infected Nodes
+        currently_infected = {
+            i
+            for i, node in enumerate(graph.nodes)
+            if node.status == "INFECTED" or node.is_patient_zero
+        }
+
+        # -------------------------------------------------------------
+        # PHASE A: INFECTION SPREAD WITH DEFENSE BLOCK CHANCES
+        # -------------------------------------------------------------
+        newly_infected = set()
+
+        for inf_idx in currently_infected:
+            for neighbor_idx in adj[inf_idx]:
+                neighbor_node = graph.nodes[neighbor_idx]
+
+                if neighbor_node.status in (
+                    "HEALTHY",
+                    "WARNING",
+                ) and not neighbor_node.is_patient_zero:
+                    device_type = getattr(neighbor_node, "node_type", "PC")
+                    type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
+                    type_mult = type_cfg.defense_multiplier if type_cfg else 1.0
+
+                    block_chance = min(0.90, def_power * 0.75 * type_mult)
+                    spread_chance = inf_rate
+
+                    if random.random() < spread_chance:
+                        if random.random() >= block_chance:
+                            newly_infected.add(neighbor_idx)
+
+        # -------------------------------------------------------------
+        # PHASE B: RETAKING & NEUTRALIZING INFECTED NODES (INCLUDING P0)
+        # -------------------------------------------------------------
+        recovered_this_step = set()
+        recovery_chance = max(0.02, def_power * 0.35)
+
+        for inf_idx in list(currently_infected):
+            node = graph.nodes[inf_idx]
+
+            # Special Patient Zero Defense Counterattack Logic:
+            if node.is_patient_zero:
+                # Calculate how many healthy neighbors are applying counter-pressure
+                healthy_neighbors = sum(
+                    1
+                    for n_idx in adj[inf_idx]
+                    if graph.nodes[n_idx].status == "HEALTHY"
+                )
+                neighbor_support = (
+                    healthy_neighbors / max(1, len(adj[inf_idx]))
+                    if adj[inf_idx]
+                    else 1.0
+                )
+
+                # Patient Zero requires stronger defense power & surrounding pressure to neutralize
+                p0_neutralize_chance = (
+                    def_power * 0.25
+                ) * neighbor_support
+
+                if random.random() < p0_neutralize_chance:
+                    node.is_patient_zero = False  # Strip origin status
+                    recovered_this_step.add(inf_idx)
+            else:
+                # Standard node retake roll
+                if random.random() < recovery_chance:
+                    recovered_this_step.add(inf_idx)
+
+        # Apply state updates
+        for idx in newly_infected:
+            graph.nodes[idx].status = "INFECTED"
+
+        for idx in recovered_this_step:
+            graph.nodes[idx].status = "HEALTHY"
+            currently_infected.discard(idx)
+            self.total_recovered_count += 1
+
+        currently_infected.update(newly_infected)
+
+        # -------------------------------------------------------------
+        # PHASE C: UPDATE EDGE & WARNING STATES
+        # -------------------------------------------------------------
+        for inf_idx in currently_infected:
+            for neighbor_idx in adj[inf_idx]:
+                if graph.nodes[neighbor_idx].status == "HEALTHY":
+                    graph.nodes[neighbor_idx].status = "WARNING"
+
+        # Reset warnings for nodes that have no infected neighbors
+        for i, node in enumerate(graph.nodes):
+            if node.status == "WARNING":
+                has_infected_neighbor = any(
+                    graph.nodes[n_idx].status == "INFECTED" for n_idx in adj[i]
+                )
+                if not has_infected_neighbor:
+                    node.status = "HEALTHY"
+
+        # Update Edge Statuses
+        for edge in graph.edges:
+            u_inf = graph.nodes[edge.u].status == "INFECTED"
+            v_inf = graph.nodes[edge.v].status == "INFECTED"
+
+            if u_inf and v_inf:
+                edge.status = "INFECTED"
+            elif u_inf or v_inf:
+                edge.status = "WARNING"
             else:
                 edge.status = "HEALTHY"
 
-        infected_cnt = len(infected_set)
+        infected_cnt = len(currently_infected)
         threat_pct = (infected_cnt / float(total_nodes)) * 100.0
-        status = "CRITICAL OUTBREAK" if threat_pct > 75.0 else "CONTAINMENT ACTIVE"
+
+        if infected_cnt == 0:
+            status_text = "THREAT NEUTRALIZED - ALL CLEAN"
+        elif threat_pct > 75.0:
+            status_text = "CRITICAL OUTBREAK"
+        elif threat_pct < 20.0:
+            status_text = "DEFENSE RETAKING DOMAIN"
+        else:
+            status_text = "OUTBREAK IN PROGRESS"
 
         return TelemetryData(
             step=self.step_counter,
-            status=status,
+            status=status_text,
             infected_nodes=infected_cnt,
+            recovered_nodes=self.total_recovered_count,
             total_nodes=total_nodes,
-            active_defenses=int(def_power * 5),
+            active_defenses=int(def_power * 10),
             threat_level_pct=threat_pct,
+            sim_time_seconds=self.step_counter,
         )
