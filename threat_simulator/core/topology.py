@@ -13,6 +13,8 @@ class Node:
     y: float = 0.0
     is_patient_zero: bool = False
 
+    infection_step: int = -1
+
 
 @dataclass
 class Edge:
@@ -111,10 +113,8 @@ class TopologyGenerator:
 
         edges = []
         for i in range(num_nodes):
-            edges.append(Edge(u=i, v=(i + 1) % num_nodes))
-            edges.append(Edge(u=i, v=(i + 2) % num_nodes))
-            if i % 2 == 0:
-                edges.append(Edge(u=i, v=(i + 6) % num_nodes))
+            for j in range(i+1, num_nodes):
+                edges.append(Edge(u=i, v=j))
 
         return NetworkGraph(nodes=nodes, edges=edges)
 
@@ -133,8 +133,6 @@ class TopologyGenerator:
         edges = []
         for i in range(1, num_nodes):
             edges.append(Edge(u=0, v=i))
-            if i % 2 == 0:
-                edges.append(Edge(u=i, v=(i % (num_nodes - 1)) + 1))
 
         return NetworkGraph(nodes=nodes, edges=edges)
 

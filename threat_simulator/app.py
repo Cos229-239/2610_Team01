@@ -137,8 +137,13 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(
             row=0, column=0, padx=5, pady=5
         )
+
+        self.inf_value_label = ctk.CTkLabel(slider_frame, text = "0.3")
+        self.inf_value_label.grid(row=1, column=0, padx=5)
+
         self.slider_inf = ctk.CTkSlider(
-            slider_frame, from_=0.1, to=1.0, number_of_steps=9
+            slider_frame, from_=0.1, to=1.0, number_of_steps=9, 
+            command=lambda v: self.inf_value_label.configure(text=f"{v:.1f}")
         )
         self.slider_inf.set(0.3)
         self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
@@ -146,8 +151,13 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkLabel(slider_frame, text="Defense Power:").grid(
             row=0, column=2, padx=5, pady=5
         )
+
+        self.def_value_label = ctk.CTkLabel(slider_frame, text = "0.5")
+        self.def_value_label.grid(row=1, column=2, padx=5)
+
         self.slider_def = ctk.CTkSlider(
-            slider_frame, from_=0.1, to=1.0, number_of_steps=9
+            slider_frame, from_=0.1, to=1.0, number_of_steps=9,
+            command=lambda v: self.def_value_label.configure(text=f"{v:.1f}")
         )
         self.slider_def.set(0.5)
         self.slider_def.grid(row=0, column=3, padx=5, pady=5)
@@ -196,6 +206,8 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel.clear()
         for node in self.graph.nodes:
             node.status = "HEALTHY"
+        for edge in self.graph.edges:
+            edge.status = "HEALTHY"
         self.net_canvas.render()
 
     def run_loop(self):
