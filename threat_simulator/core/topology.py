@@ -1,4 +1,5 @@
 import math
+import random
 from dataclasses import dataclass, field
 from typing import List, Optional
 from core.node_types import NODE_TYPES
@@ -20,7 +21,9 @@ class Edge:
     u: int
     v: int
     status: str = "HEALTHY"
-    is_firewall: bool = False  # Tracks active firewall barriers
+    is_firewall: bool = False
+    password: str = ""             # Random or user-assigned encryption key
+    crack_progress: float = 0.0     # Cracking percentage (0.0 to 1.0)
 
 
 @dataclass
@@ -109,23 +112,25 @@ class NetworkGraph:
                     return index
         return None
 
-    def toggle_firewall_at_index(self, index: int) -> bool:
-        """Toggles an active firewall barrier on an edge by index."""
+    def toggle_firewall_at_index(self, index: int, custom_pwd: str = "") -> bool:
+        """Toggles an active firewall barrier and assigns a custom or randomized password key."""
         if 0 <= index < len(self.edges):
-            self.edges[index].is_firewall = not self.edges[index].is_firewall
+            edge = self.edges[index]
+            edge.is_firewall = not edge.is_firewall
+            edge.crack_progress = 0.0
+
+            if edge.is_firewall:
+                if custom_pwd and custom_pwd.strip():
+                    edge.password = custom_pwd.strip().upper()[:6]
+                else:
+                    edge.password = "".join(random.choices("0123456789ABCDEF", k=4))
+            else:
+                edge.password = ""
             return True
         return False
 
-    def clear(self):
-        """Clears all nodes and edges from the graph instance."""
-        self.nodes.clear()
-        self.edges.clear()
-
-
-    # In core/topology.py inside NetworkGraph:
-
     def reset_states(self):
-        """Resets all node and edge statuses and disarms all active firewalls."""
+        """Resets all node and edge statuses, restores Patient Zero, and disarms firewalls."""
         p0_idx = self.get_patient_zero_index() if self.nodes else 0
 
         for i, node in enumerate(self.nodes):
@@ -135,6 +140,13 @@ class NetworkGraph:
         for edge in self.edges:
             edge.status = "HEALTHY"
             edge.is_firewall = False
+            edge.password = ""
+            edge.crack_progress = 0.0
+
+    def clear(self):
+        """Clears all nodes and edges from the graph instance."""
+        self.nodes.clear()
+        self.edges.clear()
 
 
 class TopologyGenerator:

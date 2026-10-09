@@ -76,7 +76,7 @@ class SimulationEngine:
         def_power: float,
         ai_mode: str = "Strategic AI",
     ) -> TelemetryData:
-        """Executes a single simulation tick with escalating infection potency over time."""
+        """Executes a single simulation tick with dynamic password cracking and escalating infection potency."""
         self.step_counter += 1
         total_nodes = graph.node_count
 
@@ -104,9 +104,34 @@ class SimulationEngine:
         defense_fatigue = max(0.4, 1.0 - (self.step_counter * 0.015))
         effective_def_power = def_power * defense_fatigue
 
-        # 1. Build Adjacency Map
+        # -------------------------------------------------------------
+        # ADAPTIVE FIREWALL PASSWORD CRACKING PHASE
+        # -------------------------------------------------------------
+        for edge in graph.edges:
+            if getattr(edge, "is_firewall", False):
+                u_inf = graph.nodes[edge.u].status == "INFECTED"
+                v_inf = graph.nodes[edge.v].status == "INFECTED"
+
+                # If an infected node borders this firewall barrier, apply cracking pressure
+                if u_inf or v_inf:
+                    # Crack speed scales with current infection rate and escalation multiplier
+                    crack_speed = (effective_inf_rate * 0.15) * escalation_factor
+                    edge.crack_progress = min(1.0, getattr(edge, "crack_progress", 0.0) + crack_speed)
+
+                    # When cracking hits 100%, breach and disarm the firewall barrier
+                    if edge.crack_progress >= 1.0:
+                        edge.is_firewall = False
+                        edge.crack_progress = 0.0
+                        edge.password = ""
+                        edge.status = "INFECTED"
+
+        # 1. Build Adjacency Map (Excludes Intact Active Firewalls)
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         for edge in graph.edges:
+            # Skip edge if firewall is active and unbroken
+            if getattr(edge, "is_firewall", False):
+                continue
+
             if edge.u < total_nodes and edge.v < total_nodes:
                 adj[edge.u].append(edge.v)
                 adj[edge.v].append(edge.u)
@@ -152,7 +177,6 @@ class SimulationEngine:
                 ]
                 ranked_targets.sort(key=lambda x: x[1], reverse=True)
 
-                # Higher step counts allow more breach attempts per tick
                 max_breaches = max(1, int(effective_inf_rate * 4))
 
                 best_target_idx, _ = ranked_targets[0]
@@ -255,15 +279,19 @@ class SimulationEngine:
                     node.status = "HEALTHY"
 
         for edge in graph.edges:
-            u_inf = graph.nodes[edge.u].status == "INFECTED"
-            v_inf = graph.nodes[edge.v].status == "INFECTED"
-
-            if u_inf and v_inf:
-                edge.status = "INFECTED"
-            elif u_inf or v_inf:
+            # Highlight firewall edges as warning when actively being cracked
+            if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) > 0.0:
                 edge.status = "WARNING"
             else:
-                edge.status = "HEALTHY"
+                u_inf = graph.nodes[edge.u].status == "INFECTED"
+                v_inf = graph.nodes[edge.v].status == "INFECTED"
+
+                if u_inf and v_inf:
+                    edge.status = "INFECTED"
+                elif u_inf or v_inf:
+                    edge.status = "WARNING"
+                else:
+                    edge.status = "HEALTHY"
 
         infected_cnt = len(currently_infected)
         threat_pct = (infected_cnt / float(total_nodes)) * 100.0

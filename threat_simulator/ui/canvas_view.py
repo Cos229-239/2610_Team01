@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Dict, Optional, Tuple
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
@@ -61,6 +61,9 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_x: float = 0.0
         self.mouse_y: float = 0.0
 
+        # Stores button hitboxes for firewall password edit buttons: index -> (x1, y1, x2, y2)
+        self.firewall_btn_bounds: Dict[int, Tuple[float, float, float, float]] = {}
+
         self.bind("<Button-1>", self._on_click)
         self.bind("<B1-Motion>", self._on_drag)
         self.bind("<Motion>", self._on_mouse_move)
@@ -91,6 +94,29 @@ class NetworkCanvas(ctk.CTkCanvas):
                 return i
         return None
 
+    def _prompt_firewall_password(self, edge_idx: int, is_update: bool = False):
+        """Displays a modal dialog allowing the user to assign or update a custom password key."""
+        title_text = "Update Firewall Password" if is_update else "Assign Firewall Password"
+        prompt_text = (
+            "Enter New Encryption Key (resets crack progress):"
+            if is_update
+            else "Enter Firewall Password (or leave blank for random):"
+        )
+
+        dialog = ctk.CTkInputDialog(text=prompt_text, title=title_text)
+        user_pwd = dialog.get_input()
+
+        if user_pwd is not None:
+            if is_update:
+                # Update password directly and reset cracking progress without disarming barrier
+                edge = self.graph.edges[edge_idx]
+                if user_pwd.strip():
+                    edge.password = user_pwd.strip().upper()[:6]
+                edge.crack_progress = 0.0
+            else:
+                self.graph.toggle_firewall_at_index(edge_idx, custom_pwd=user_pwd)
+            self.render()
+
     def _on_click(self, event):
         if not self.graph:
             return
@@ -99,13 +125,24 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_y = float(event.y)
 
         # -------------------------------------------------------------
-        # FIREWALL BARRIER TOGGLE
+        # FIREWALL BARRIER & PASSWORD BUTTON CLICK HANDLING
         # -------------------------------------------------------------
         if self.mode == "FIREWALL":
+            # 1. Check if user clicked a Firewall Password Edit Button (⚙️)
+            for edge_idx, (bx1, by1, bx2, by2) in self.firewall_btn_bounds.items():
+                if bx1 <= event.x <= bx2 and by1 <= event.y <= by2:
+                    self._prompt_firewall_password(edge_idx, is_update=True)
+                    return
+
+            # 2. Toggle or create firewall on nearest edge segment
             edge_idx = self.graph.find_edge_near_point(event.x, event.y)
             if edge_idx is not None:
-                self.graph.toggle_firewall_at_index(edge_idx)
-                self.render()
+                edge = self.graph.edges[edge_idx]
+                if edge.is_firewall:
+                    self.graph.toggle_firewall_at_index(edge_idx)
+                    self.render()
+                else:
+                    self._prompt_firewall_password(edge_idx)
             return
 
         clicked_idx = self._get_node_at_pos(event.x, event.y)
@@ -156,39 +193,96 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_y = float(event.y)
 
         if self.mode == "FIREWALL" and self.graph:
+            # Check hover over gear button
+            is_hovering_btn = any(
+                bx1 <= event.x <= bx2 and by1 <= event.y <= by2
+                for bx1, by1, bx2, by2 in self.firewall_btn_bounds.values()
+            )
             hovered_edge = self.graph.find_edge_near_point(event.x, event.y)
-            self.config(cursor="X_cursor" if hovered_edge is not None else "crosshair")
+
+            if is_hovering_btn:
+                self.config(cursor="hand2")
+            else:
+                self.config(cursor="X_cursor" if hovered_edge is not None else "crosshair")
         elif self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             self.render()
 
     def render(self):
         self.delete("all")
+        self.firewall_btn_bounds.clear()
+
         if not self.graph:
             return
 
         # 1. Render Edges & Firewall Security Barriers
-        for edge in self.graph.edges:
+        for index, edge in enumerate(self.graph.edges):
             if edge.u < len(self.graph.nodes) and edge.v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
 
                 if getattr(edge, "is_firewall", False):
-                    # Outer cyan glow wall
+                    # Outer cyan security wall glow
                     self.create_line(
-                        n1.x, n1.y, n2.x, n2.y, fill="#00E5FF", width=5
-                    )
-                    # Core white beam
-                    self.create_line(
-                        n1.x, n1.y, n2.x, n2.y, fill="#FFFFFF", width=2
+                        n1.x, n1.y, n2.x, n2.y, fill="#00E5FF", width=6
                     )
 
-                    # Midpoint shield badge
+                    progress = getattr(edge, "crack_progress", 0.0)
+                    beam_color = (
+                        "#FF1744"
+                        if progress > 0.7
+                        else ("#FF9100" if progress > 0.3 else "#FFFFFF")
+                    )
+
+                    # Core beam
+                    self.create_line(
+                        n1.x, n1.y, n2.x, n2.y, fill=beam_color, width=2
+                    )
+
+                    # Midpoint Firewall Badge & Password Display
                     mid_x, mid_y = (n1.x + n2.x) / 2, (n1.y + n2.y) / 2
+                    pwd = getattr(edge, "password", "LOCK")
+
+                    # Badge background
                     self.create_rectangle(
-                        mid_x - 7, mid_y - 7, mid_x + 7, mid_y + 7,
-                        fill="#00B0FF", outline="#FFFFFF", width=1
+                        mid_x - 30,
+                        mid_y - 14,
+                        mid_x + 10,
+                        mid_y + 14,
+                        fill="#002b36",
+                        outline=beam_color,
+                        width=2,
+                    )
+
+                    label_text = f"🔑{pwd}\n{int(progress * 100)}%"
+                    self.create_text(
+                        mid_x - 10,
+                        mid_y,
+                        text=label_text,
+                        fill="#00E5FF",
+                        font=("Consolas", 7, "bold"),
+                        justify="center",
+                    )
+
+                    # Password Edit Button (⚙️)
+                    btn_x1, btn_y1 = mid_x + 12, mid_y - 14
+                    btn_x2, btn_y2 = mid_x + 32, mid_y + 14
+
+                    self.firewall_btn_bounds[index] = (btn_x1, btn_y1, btn_x2, btn_y2)
+
+                    self.create_rectangle(
+                        btn_x1,
+                        btn_y1,
+                        btn_x2,
+                        btn_y2,
+                        fill="#00B0FF",
+                        outline="#FFFFFF",
+                        width=1,
                     )
                     self.create_text(
-                        mid_x, mid_y, text="🛡", fill="#FFFFFF", font=("Arial", 8)
+                        (btn_x1 + btn_x2) / 2,
+                        (btn_y1 + btn_y2) / 2,
+                        text="⚙️",
+                        fill="#FFFFFF",
+                        font=("Arial", 9),
                     )
                 else:
                     edge_color = EDGE_COLORS.get(edge.status, "#444444")
@@ -218,7 +312,6 @@ class NetworkCanvas(ctk.CTkCanvas):
             )
             radius = type_cfg.radius if type_cfg else 14
 
-            # Highlight Patient Zero / Selection Rings
             if node.is_patient_zero:
                 self.create_oval(
                     node.x - 32,
@@ -257,7 +350,6 @@ class NetworkCanvas(ctk.CTkCanvas):
                     width=2,
                 )
 
-            # Determine Sprite
             if node.is_patient_zero:
                 sprite_img = self.sprite_manager.get_sprite(
                     "BIOHAZARD", size=(32, 32)
@@ -280,7 +372,6 @@ class NetworkCanvas(ctk.CTkCanvas):
                     node.x, node.y, image=sprite_img, anchor="center"
                 )
 
-            # Render Labels
             label = "PATIENT ZERO" if node.is_patient_zero else node.id
             font_color = "#B71C1C" if node.is_patient_zero else "#222222"
             self.create_text(
