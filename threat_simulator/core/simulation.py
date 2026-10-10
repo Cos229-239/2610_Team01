@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph
+from copy import deepcopy
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 # Attempt C++ module import with graceful fallback
 try:
@@ -13,6 +16,13 @@ except ImportError:
     network_engine = None
     HAS_CPP_ENGINE = False
 
+
+@dataclass
+class SimSnapshot:
+    step: int
+    telemetry: TelemetryData
+    nodes: List
+    edges: List
 
 @dataclass
 class TelemetryData:
