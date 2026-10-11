@@ -236,33 +236,6 @@ class SimulatorApp(ctk.CTk):
 
         self.net_canvas.render()
 
-    def step_back(self):
-        if not self.sim_engine.can_step_back():
-            return
-        self.pause_sim()
-        new_index = self.sim_engine.history_index - 1
-        telemetry = self.sim_engine.restore_snapshot(new_index, self.graph)
-        if telemetry:
-            self.net_canvas.render()
-            self.telemetry_panel.show_snapshot(telemetry, new_index)
-
-    def step_forward(self):
-        if not self.sim_engine.can_step_forward():
-            return
-        self.pause_sim()
-        new_index = self.sim_engine.history_index + 1
-        telemetry = self.sim_engine.restore_snapshot(new_index, self.graph)
-        if telemetry:
-            self.net_canvas.render()
-            self.telemetry_panel.show_snapshot(telemetry, new_index)
-
-    def jump_to_step(self, history_index: int):
-        self.pause_sim()
-        telemetry = self.sim_engine.restore_snapshot(history_index, self.graph)
-        if telemetry:
-            self.net_canvas.render()
-            self.telemetry_panel.show_snapshot(telemetry, history_index)
-        
     def run_loop(self):
         if not self.is_running:
             return
@@ -275,7 +248,7 @@ class SimulatorApp(ctk.CTk):
         )
 
         self.net_canvas.render()
-        self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+        self.telemetry_panel.append_log(telemetry)
 
         # -------------------------------------------------------------
         # ENDGAME TERMINATION CHECK
@@ -345,8 +318,6 @@ class SimulatorApp(ctk.CTk):
             command=dialog.destroy,
         ).pack(pady=(15, 10))
 
-
-    
 
 if __name__ == "__main__":
     app = SimulatorApp()
