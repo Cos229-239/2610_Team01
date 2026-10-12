@@ -6,7 +6,7 @@ class TelemetryPanel(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         # Title
@@ -55,13 +55,41 @@ class TelemetryPanel(ctk.CTkFrame):
         )
         self.status_label.grid(row=1, column=3, padx=5, pady=(0, 8))
 
+        # Selected Node Information
+        self.node_info_frame = ctk.CTkFrame(self)
+        self.node_info_frame.grid(
+            row=2,
+            column=0,
+            padx=10,
+            pady=5,
+            sticky="ew"
+            )
+
+        ctk.CTkLabel(
+            self.node_info_frame,
+            text="Selected Node",
+            font=("Arial", 14, "bold")
+        ).pack(anchor="w", padx=5, pady=(5, 2))
+
+        self.node_info_label = ctk.CTkLabel(
+            self.node_info_frame,
+            text="No node selected",
+            justify="left"
+        )
+
+        self.node_info_label.pack(
+            anchor="w",
+            padx=5,
+            pady=(0, 5)
+        )
+
         # Scrolling Log
         self.log_box = ctk.CTkTextbox(self, font=("Courier", 12))
-        self.log_box.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.log_box.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
 
         # Navigation bar (must come after log_box)
         nav_frame = ctk.CTkFrame(self)
-        nav_frame.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
+        nav_frame.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
         nav_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         self.btn_back = ctk.CTkButton(
@@ -152,6 +180,26 @@ class TelemetryPanel(ctk.CTkFrame):
         if line in self._log_step_map:
             self.master.jump_to_step(self._log_step_map[line])
 
+    def show_node_info(self, node, graph):
+
+        node_index = graph.nodes.index(node)
+
+        connection = sum(
+            1
+            for edge in graph.edges
+            if edge.u == node_index or edge.v == node_index
+            )
+
+        self.node_info_label.configure(
+            text=(
+                f"ID: {node.id}\n"
+                f"Type: {node.node_type}\n"
+                f"Status: {node.status}\n"
+                f"Patient Zero: {'Yes' if node.is_patient_zero else 'No'}\n"
+                f"Connections: {connection}"
+                )
+            )
+            
     def clear(self):
         self.log_box.delete("1.0", "end")
         self.time_label.configure(text="0s")
