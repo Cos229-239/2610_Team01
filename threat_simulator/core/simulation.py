@@ -1,13 +1,14 @@
 import random
+from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Optional
+
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph
 
 # Attempt C++ module import with graceful fallback
 try:
     import network_engine
-
     HAS_CPP_ENGINE = True
 except ImportError:
     network_engine = None
@@ -38,14 +39,55 @@ class TelemetryData:
         )
 
 
+@dataclass
+class SimSnapshot:
+    step: int
+    telemetry: TelemetryData
+    nodes: List
+    edges: List
+
+
 class SimulationEngine:
     def __init__(self):
         self.step_counter: int = 0
         self.total_recovered_count: int = 0
+        self.history: List[SimSnapshot] = []
+        self.history_index: int = -1
 
     def reset(self) -> None:
         self.step_counter = 0
         self.total_recovered_count = 0
+        self.history.clear()
+        self.history_index = -1
+
+    def _record_snapshot(self, graph: NetworkGraph, telemetry: TelemetryData):
+        snap = SimSnapshot(
+            step=self.step_counter,
+            telemetry=telemetry,
+            nodes=deepcopy(graph.nodes),
+            edges=deepcopy(graph.edges),
+        )
+        # If user had stepped back, discard any "future" history
+        if self.history_index < len(self.history) - 1:
+            self.history = self.history[: self.history_index + 1]
+        self.history.append(snap)
+        self.history_index = len(self.history) - 1
+
+    def restore_snapshot(self, index: int, graph: NetworkGraph) -> Optional[TelemetryData]:
+        if not (0 <= index < len(self.history)):
+            return None
+        snap = self.history[index]
+        graph.nodes = deepcopy(snap.nodes)
+        graph.edges = deepcopy(snap.edges)
+        self.history_index = index
+        self.step_counter = snap.step
+        return snap.telemetry
+
+    def can_step_back(self) -> bool:
+        return self.history_index > 0
+
+    def can_step_forward(self) -> bool:
+        return self.history_index < len(self.history) - 1
 
     def _calculate_target_priority(
         self,
@@ -59,14 +101,12 @@ class SimulationEngine:
         device_type = getattr(node, "node_type", "PC")
         type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
         resistance = type_cfg.defense_multiplier if type_cfg else 1.0
-
         uninfected_neighbors = sum(
             1 for n in adj[target_idx] if n not in infected_set
         )
         device_weight = (
             2.5 if device_type == "Router" else (1.5 if device_type == "Modem" else 1.0)
         )
-
         return ((uninfected_neighbors + 1) * device_weight) / max(0.5, resistance)
 
     def step(
@@ -81,7 +121,7 @@ class SimulationEngine:
         total_nodes = graph.node_count
 
         if total_nodes == 0:
-            return TelemetryData(
+            telemetry = TelemetryData(
                 self.step_counter,
                 "NO NODES",
                 0,
@@ -92,6 +132,8 @@ class SimulationEngine:
                 escalation_factor=1.0,
                 sim_time_seconds=self.step_counter,
             )
+            self._record_snapshot(graph, telemetry)
+            return telemetry
 
         # -------------------------------------------------------------
         # ESCALATION CALCULATION: Threat grows stronger over time
@@ -111,13 +153,13 @@ class SimulationEngine:
             if getattr(edge, "is_firewall", False):
                 u_inf = graph.nodes[edge.u].status == "INFECTED"
                 v_inf = graph.nodes[edge.v].status == "INFECTED"
-
                 # If an infected node borders this firewall barrier, apply cracking pressure
                 if u_inf or v_inf:
                     # Crack speed scales with current infection rate and escalation multiplier
                     crack_speed = (effective_inf_rate * 0.15) * escalation_factor
-                    edge.crack_progress = min(1.0, getattr(edge, "crack_progress", 0.0) + crack_speed)
-
+                    edge.crack_progress = min(
+                        1.0, getattr(edge, "crack_progress", 0.0) + crack_speed
+                    )
                     # When cracking hits 100%, breach and disarm the firewall barrier
                     if edge.crack_progress >= 1.0:
                         edge.is_firewall = False
@@ -131,7 +173,6 @@ class SimulationEngine:
             # Skip edge if firewall is active and unbroken
             if getattr(edge, "is_firewall", False):
                 continue
-
             if edge.u < total_nodes and edge.v < total_nodes:
                 adj[edge.u].append(edge.v)
                 adj[edge.v].append(edge.u)
@@ -142,7 +183,6 @@ class SimulationEngine:
             for i, node in enumerate(graph.nodes)
             if node.status == "INFECTED" or node.is_patient_zero
         }
-
         if not currently_infected and graph.nodes:
             p0_idx = graph.get_patient_zero_index()
             graph.nodes[p0_idx].status = "INFECTED"
@@ -163,7 +203,6 @@ class SimulationEngine:
                     )
 
         newly_infected = set()
-
         if attack_candidates:
             if ai_mode == "Strategic AI":
                 ranked_targets: List[Tuple[int, float]] = [
@@ -176,29 +215,28 @@ class SimulationEngine:
                     for t_idx in attack_candidates
                 ]
                 ranked_targets.sort(key=lambda x: x[1], reverse=True)
-
                 max_breaches = max(1, int(effective_inf_rate * 4))
-
                 best_target_idx, _ = ranked_targets[0]
                 best_node = graph.nodes[best_target_idx]
                 device_type = getattr(best_node, "node_type", "PC")
                 type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
                 type_mult = type_cfg.defense_multiplier if type_cfg else 1.0
-
                 attack_pressure = effective_inf_rate * (
                     1.0 + 0.5 * attack_candidates[best_target_idx]
                 )
                 block_chance = max(
                     0.05,
-                    min(0.85, (effective_def_power * 0.6 * type_mult) - (attack_pressure * 0.2)),
+                    min(
+                        0.85,
+                        (effective_def_power * 0.6 * type_mult)
+                        - (attack_pressure * 0.2),
+                    ),
                 )
-
                 if (
                     random.random() < attack_pressure
                     and random.random() >= block_chance
                 ):
                     newly_infected.add(best_target_idx)
-
                 for target_idx, _ in ranked_targets[1:]:
                     if len(newly_infected) >= max_breaches:
                         break
@@ -207,10 +245,11 @@ class SimulationEngine:
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
                     t_block = min(0.90, effective_def_power * 0.7 * t_mult)
-
-                    if random.random() < effective_inf_rate and random.random() >= t_block:
+                    if (
+                        random.random() < effective_inf_rate
+                        and random.random() >= t_block
+                    ):
                         newly_infected.add(target_idx)
-
             else:
                 for target_idx in attack_candidates:
                     t_node = graph.nodes[target_idx]
@@ -218,8 +257,10 @@ class SimulationEngine:
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
                     block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
-
-                    if random.random() < effective_inf_rate and random.random() >= block_chance:
+                    if (
+                        random.random() < effective_inf_rate
+                        and random.random() >= block_chance
+                    ):
                         newly_infected.add(target_idx)
 
         # -------------------------------------------------------------
@@ -227,10 +268,8 @@ class SimulationEngine:
         # -------------------------------------------------------------
         recovered_this_step = set()
         recovery_chance = max(0.02, effective_def_power * 0.35)
-
         for inf_idx in list(currently_infected):
             node = graph.nodes[inf_idx]
-
             if node.is_patient_zero:
                 healthy_neighbors = sum(
                     1
@@ -243,7 +282,6 @@ class SimulationEngine:
                     else 1.0
                 )
                 p0_neutralize_chance = (effective_def_power * 0.25) * neighbor_support
-
                 if random.random() < p0_neutralize_chance:
                     node.is_patient_zero = False
                     recovered_this_step.add(inf_idx)
@@ -254,12 +292,10 @@ class SimulationEngine:
         # Apply state updates
         for idx in newly_infected:
             graph.nodes[idx].status = "INFECTED"
-
         for idx in recovered_this_step:
             graph.nodes[idx].status = "HEALTHY"
             currently_infected.discard(idx)
             self.total_recovered_count += 1
-
         currently_infected.update(newly_infected)
 
         # -------------------------------------------------------------
@@ -280,12 +316,13 @@ class SimulationEngine:
 
         for edge in graph.edges:
             # Highlight firewall edges as warning when actively being cracked
-            if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) > 0.0:
+            if getattr(edge, "is_firewall", False) and getattr(
+                edge, "crack_progress", 0.0
+            ) > 0.0:
                 edge.status = "WARNING"
             else:
                 u_inf = graph.nodes[edge.u].status == "INFECTED"
                 v_inf = graph.nodes[edge.v].status == "INFECTED"
-
                 if u_inf and v_inf:
                     edge.status = "INFECTED"
                 elif u_inf or v_inf:
@@ -305,7 +342,7 @@ class SimulationEngine:
         else:
             status_text = f"{ai_mode.upper()} OUTBREAK IN PROGRESS"
 
-        return TelemetryData(
+        telemetry = TelemetryData(
             step=self.step_counter,
             status=status_text,
             infected_nodes=infected_cnt,
@@ -316,3 +353,8 @@ class SimulationEngine:
             escalation_factor=escalation_factor,
             sim_time_seconds=self.step_counter,
         )
+
+        # Record snapshot AFTER all state updates
+        self._record_snapshot(graph, telemetry)
+
+        return telemetry

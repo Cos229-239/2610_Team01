@@ -15,9 +15,14 @@ class SimulatorApp(ctk.CTk):
         self.graph = NetworkGraph()
         self.is_running = False
         self.loop_job = None
+        self.settings = {
+            "colorblind_mode": False
+        }
 
         self._build_ui()
         self._on_level_change("Level 1: Ring Topology")
+
+        
 
     # ------------------------------------------------------------------
     # Event Callbacks
@@ -142,6 +147,13 @@ class SimulatorApp(ctk.CTk):
             command=self._clear_canvas,
         ).grid(row=0, column=7, padx=5, pady=5)
 
+        ctk.CTkButton(
+            top_ctrl,
+            text="Settings",
+            width=80,
+            command=self.open_settings
+        ).grid(row=0, column=8, padx=5, pady=5)
+
         # Sliders
         slider_frame = ctk.CTkFrame(left_frame)
         slider_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
@@ -182,7 +194,18 @@ class SimulatorApp(ctk.CTk):
 
         # Canvas
         self.net_canvas = NetworkCanvas(left_frame)
-        self.net_canvas.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+
+        self.net_canvas.set_node_select_callback(
+            self.on_node_selected
+        )
+
+        self.net_canvas.grid(
+            row=2,
+            column=0,
+            padx=10,
+            pady=10,
+            sticky="nsew"
+        )
 
         # Buttons (Play/Pause/Reset)
         btn_frame = ctk.CTkFrame(left_frame)
@@ -203,10 +226,46 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+    def on_node_selected(self, node_index: int):
+
+            if 0 <= node_index < len(self.graph.nodes):
+
+                node = self.graph.nodes[node_index]
+
+                self.telemetry_panel.show_node_info(
+                    node,
+                    self.graph
+                )
+
     # ------------------------------------------------------------------
     # Simulation Loop Controls
     # ------------------------------------------------------------------
+    
+    def open_settings(self):
 
+        settings_window = ctk.CTkToplevel(self)
+        settings_window.title("Settings")
+        settings_window.geometry("300x200")
+
+        colorblind_var = ctk.BooleanVar(
+            value=self.settings["colorblind_mode"]
+        )
+
+        ctk.CTkCheckBox(
+            settings_window,
+            text="Colorblind Mode",
+            variable=colorblind_var,
+            command=lambda: self.toggle_colorblind(
+                colorblind_var.get()
+            )
+        ).pack(padx=20, pady=20, anchor="w")
+
+    def toggle_colorblind(self, enabled: bool):
+        self.settings["colorblind_mode"] = enabled
+        self.net_canvas.set_colorblind_mode(enabled)
+
+
+    
     def play_sim(self):
         if not self.is_running:
             self.is_running = True
@@ -236,6 +295,33 @@ class SimulatorApp(ctk.CTk):
 
         self.net_canvas.render()
 
+    def step_back(self):
+        if not self.sim_engine.can_step_back():
+            return
+        self.pause_sim()
+        new_index = self.sim_engine.history_index - 1
+        telemetry = self.sim_engine.restore_snapshot(new_index, self.graph)
+        if telemetry:
+            self.net_canvas.render()
+            self.telemetry_panel.show_snapshot(telemetry, new_index)
+
+    def step_forward(self):
+        if not self.sim_engine.can_step_forward():
+            return
+        self.pause_sim()
+        new_index = self.sim_engine.history_index + 1
+        telemetry = self.sim_engine.restore_snapshot(new_index, self.graph)
+        if telemetry:
+            self.net_canvas.render()
+            self.telemetry_panel.show_snapshot(telemetry, new_index)
+
+    def jump_to_step(self, history_index: int):
+        self.pause_sim()
+        telemetry = self.sim_engine.restore_snapshot(history_index, self.graph)
+        if telemetry:
+            self.net_canvas.render()
+            self.telemetry_panel.show_snapshot(telemetry, history_index)
+        
     def run_loop(self):
         if not self.is_running:
             return
@@ -248,7 +334,7 @@ class SimulatorApp(ctk.CTk):
         )
 
         self.net_canvas.render()
-        self.telemetry_panel.append_log(telemetry)
+        self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
 
         # -------------------------------------------------------------
         # ENDGAME TERMINATION CHECK
@@ -318,6 +404,8 @@ class SimulatorApp(ctk.CTk):
             command=dialog.destroy,
         ).pack(pady=(15, 10))
 
+
+    
 
 if __name__ == "__main__":
     app = SimulatorApp()

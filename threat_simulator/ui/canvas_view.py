@@ -12,11 +12,19 @@ STATUS_COLORS = {
     "HEALTHY": "#69F0AE",
 }
 
+COLORBLIND_STATUS_COLORS = {
+    "INFECTED": "#D55E00",
+    "WARNING": "#CC79A7",
+    "HEALTHY": "#0072B2",
+    }
+
 EDGE_COLORS = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
     "HEALTHY": "#8b5a2b",
 }
+
+
 
 
 class SpriteSheetManager:
@@ -68,7 +76,15 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.bind("<B1-Motion>", self._on_drag)
         self.bind("<Motion>", self._on_mouse_move)
 
+        self.node_select_callback = None
+
         self.sprite_manager = SpriteSheetManager()
+
+        self.colorblind_mode = False
+
+    def set_colorblind_mode(self, enabled: bool):
+        self.colorblind_mode = enabled
+        self.render()
 
     def set_mode(self, mode: str):
         self.mode = mode
@@ -78,6 +94,9 @@ class NetworkCanvas(ctk.CTkCanvas):
 
     def set_active_node_type(self, node_type: str):
         self.active_node_type = node_type
+
+    def set_node_select_callback(self, callback):
+        self.node_select_callback = callback
 
     def set_graph(self, graph: NetworkGraph):
         self.graph = graph
@@ -150,8 +169,16 @@ class NetworkCanvas(ctk.CTkCanvas):
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
                 self.graph.add_node(
-                    event.x, event.y, node_type=self.active_node_type
+                    event.x,
+                    event.y,
+                    node_type=self.active_node_type
                 )
+
+                new_index = len(self.graph.nodes) - 1
+
+                if self.node_select_callback:
+                    self.node_select_callback(new_index)
+
                 self.render()
 
         elif self.mode == "CONNECT_EDGE":
@@ -174,6 +201,11 @@ class NetworkCanvas(ctk.CTkCanvas):
         elif self.mode == "SELECT":
             if clicked_idx is not None:
                 self.selected_node_idx = clicked_idx
+
+                if self.node_select_callback:
+                    self.node_select_callback(clicked_idx)
+
+                
 
     def _on_drag(self, event):
         self.mouse_x = float(event.x)
@@ -311,6 +343,27 @@ class NetworkCanvas(ctk.CTkCanvas):
                 getattr(node, "node_type", "PC"), NODE_TYPES.get("PC")
             )
             radius = type_cfg.radius if type_cfg else 14
+
+            node_colors = (
+                COLORBLIND_STATUS_COLORS
+                if self.colorblind_mode
+                else STATUS_COLORS
+            )
+
+            status_color = node_colors.get(
+                node.status,
+                "#888888"
+            )
+
+            self.create_oval(
+                node.x - radius -3,
+                node.y - radius - 3,
+                node.x + radius + 3,
+                node.y + radius + 3,
+                outline=status_color,
+                width=3,
+            )
+
 
             if node.is_patient_zero:
                 self.create_oval(
