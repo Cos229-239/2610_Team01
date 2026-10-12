@@ -15,21 +15,27 @@ class SimulatorApp(ctk.CTk):
         self.graph = NetworkGraph()
         self.is_running = False
         self.loop_job = None
+        self.settings = {
+            "colorblind_mode": False
+        }
 
         self._build_ui()
         self._on_level_change("Level 1: Ring Topology")
+
+        
 
     # ------------------------------------------------------------------
     # Event Callbacks
     # ------------------------------------------------------------------
 
     def _on_mode_change(self, mode_str: str):
-        """Callback for the segmented button (+ Node, + Edge, Move, Infect)."""
+        """Callback for the segmented button (+ Node, + Edge, Move, Infect, Firewall)."""
         mode_map = {
             "Move": "SELECT",
             "+ Node": "ADD_NODE",
             "+ Edge": "CONNECT_EDGE",
             "Infect": "SET_ORIGIN",
+            "Firewall": "FIREWALL",
         }
         self.net_canvas.set_mode(mode_map.get(mode_str, "SELECT"))
 
@@ -101,10 +107,10 @@ class SimulatorApp(ctk.CTk):
         )
         self.level_menu.grid(row=0, column=1, padx=5, pady=5)
 
-        # Segmented Button for Canvas Editing Mode
+        # Segmented Button for Canvas Editing Mode (Includes Firewall)
         self.mode_selector = ctk.CTkSegmentedButton(
             top_ctrl,
-            values=["Move", "+ Node", "+ Edge", "Infect"],
+            values=["Move", "+ Node", "+ Edge", "Infect", "Firewall"],
             command=self._on_mode_change,
         )
         self.mode_selector.set("Move")
@@ -122,13 +128,31 @@ class SimulatorApp(ctk.CTk):
         )
         self.device_menu.grid(row=0, column=4, padx=5, pady=5)
 
+        # Spread AI Strategy Selector
+        ctk.CTkLabel(top_ctrl, text="AI Mode:", font=("Arial", 11)).grid(
+            row=0, column=5, padx=(10, 2), pady=5
+        )
+        self.ai_mode_menu = ctk.CTkOptionMenu(
+            top_ctrl,
+            values=["Strategic AI", "Uniform"],
+            width=110,
+        )
+        self.ai_mode_menu.grid(row=0, column=6, padx=5, pady=5)
+
         ctk.CTkButton(
             top_ctrl,
             text="Clear",
             width=60,
             fg_color="#C62828",
             command=self._clear_canvas,
-        ).grid(row=0, column=5, padx=5, pady=5)
+        ).grid(row=0, column=7, padx=5, pady=5)
+
+        ctk.CTkButton(
+            top_ctrl,
+            text="Settings",
+            width=80,
+            command=self.open_settings
+        ).grid(row=0, column=8, padx=5, pady=5)
 
         # Sliders
         slider_frame = ctk.CTkFrame(left_frame)
@@ -137,8 +161,16 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(
             row=0, column=0, padx=5, pady=5
         )
+
+        self.inf_value_label = ctk.CTkLabel(slider_frame, text="0.3")
+        self.inf_value_label.grid(row=1, column=0, padx=5)
+
         self.slider_inf = ctk.CTkSlider(
-            slider_frame, from_=0.1, to=1.0, number_of_steps=9
+            slider_frame,
+            from_=0.1,
+            to=1.0,
+            number_of_steps=9,
+            command=lambda v: self.inf_value_label.configure(text=f"{v:.1f}"),
         )
         self.slider_inf.set(0.3)
         self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
@@ -146,15 +178,34 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkLabel(slider_frame, text="Defense Power:").grid(
             row=0, column=2, padx=5, pady=5
         )
+
+        self.def_value_label = ctk.CTkLabel(slider_frame, text="0.5")
+        self.def_value_label.grid(row=1, column=2, padx=5)
+
         self.slider_def = ctk.CTkSlider(
-            slider_frame, from_=0.1, to=1.0, number_of_steps=9
+            slider_frame,
+            from_=0.1,
+            to=1.0,
+            number_of_steps=9,
+            command=lambda v: self.def_value_label.configure(text=f"{v:.1f}"),
         )
         self.slider_def.set(0.5)
         self.slider_def.grid(row=0, column=3, padx=5, pady=5)
 
         # Canvas
         self.net_canvas = NetworkCanvas(left_frame)
-        self.net_canvas.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+
+        self.net_canvas.set_node_select_callback(
+            self.on_node_selected
+        )
+
+        self.net_canvas.grid(
+            row=2,
+            column=0,
+            padx=10,
+            pady=10,
+            sticky="nsew"
+        )
 
         # Buttons (Play/Pause/Reset)
         btn_frame = ctk.CTkFrame(left_frame)
@@ -175,10 +226,46 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+    def on_node_selected(self, node_index: int):
+
+            if 0 <= node_index < len(self.graph.nodes):
+
+                node = self.graph.nodes[node_index]
+
+                self.telemetry_panel.show_node_info(
+                    node,
+                    self.graph
+                )
+
     # ------------------------------------------------------------------
     # Simulation Loop Controls
     # ------------------------------------------------------------------
+    
+    def open_settings(self):
 
+        settings_window = ctk.CTkToplevel(self)
+        settings_window.title("Settings")
+        settings_window.geometry("300x200")
+
+        colorblind_var = ctk.BooleanVar(
+            value=self.settings["colorblind_mode"]
+        )
+
+        ctk.CTkCheckBox(
+            settings_window,
+            text="Colorblind Mode",
+            variable=colorblind_var,
+            command=lambda: self.toggle_colorblind(
+                colorblind_var.get()
+            )
+        ).pack(padx=20, pady=20, anchor="w")
+
+    def toggle_colorblind(self, enabled: bool):
+        self.settings["colorblind_mode"] = enabled
+        self.net_canvas.set_colorblind_mode(enabled)
+
+
+    
     def play_sim(self):
         if not self.is_running:
             self.is_running = True
@@ -194,23 +281,131 @@ class SimulatorApp(ctk.CTk):
         self.pause_sim()
         self.sim_engine.reset()
         self.telemetry_panel.clear()
-        for node in self.graph.nodes:
+        self.graph.reset_states()
+
+        # Find user-selected Patient Zero index (or default to 0)
+        p0_idx = self.graph.get_patient_zero_index() if self.graph.nodes else 0
+
+        for i, node in enumerate(self.graph.nodes):
             node.status = "HEALTHY"
+            node.is_patient_zero = (i == p0_idx)
+
+        for edge in self.graph.edges:
+            edge.status = "HEALTHY"
+
         self.net_canvas.render()
 
+    def step_back(self):
+        if not self.sim_engine.can_step_back():
+            return
+        self.pause_sim()
+        new_index = self.sim_engine.history_index - 1
+        telemetry = self.sim_engine.restore_snapshot(new_index, self.graph)
+        if telemetry:
+            self.net_canvas.render()
+            self.telemetry_panel.show_snapshot(telemetry, new_index)
+
+    def step_forward(self):
+        if not self.sim_engine.can_step_forward():
+            return
+        self.pause_sim()
+        new_index = self.sim_engine.history_index + 1
+        telemetry = self.sim_engine.restore_snapshot(new_index, self.graph)
+        if telemetry:
+            self.net_canvas.render()
+            self.telemetry_panel.show_snapshot(telemetry, new_index)
+
+    def jump_to_step(self, history_index: int):
+        self.pause_sim()
+        telemetry = self.sim_engine.restore_snapshot(history_index, self.graph)
+        if telemetry:
+            self.net_canvas.render()
+            self.telemetry_panel.show_snapshot(telemetry, history_index)
+        
     def run_loop(self):
         if not self.is_running:
             return
 
         telemetry = self.sim_engine.step(
-            self.graph, self.slider_inf.get(), self.slider_def.get()
+            self.graph,
+            self.slider_inf.get(),
+            self.slider_def.get(),
+            ai_mode=self.ai_mode_menu.get(),
         )
 
         self.net_canvas.render()
-        self.telemetry_panel.append_log(telemetry)
+        self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
 
+        # -------------------------------------------------------------
+        # ENDGAME TERMINATION CHECK
+        # -------------------------------------------------------------
+        total = telemetry.total_nodes
+        infected = telemetry.infected_nodes
+
+        if total > 0:
+            # Condition 1: Threat Neutralized (Victory)
+            if infected == 0:
+                self.pause_sim()
+                self._show_endgame_dialog(
+                    title="THREAT NEUTRALIZED",
+                    message="All infected nodes and Patient Zero have been successfully secured!",
+                    is_victory=True,
+                )
+                return
+
+            # Condition 2: Entire Network Infected (Defeat)
+            elif infected == total:
+                self.pause_sim()
+                self._show_endgame_dialog(
+                    title="NETWORK COMPROMISED",
+                    message="The threat has completely taken over all network nodes!",
+                    is_victory=False,
+                )
+                return
+
+        # Schedule next loop step
         self.loop_job = self.after(1000, self.run_loop)
 
+    def _show_endgame_dialog(self, title: str, message: str, is_victory: bool):
+        """Displays a clean modal popup when simulation reaches an endgame state."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.geometry("420x220")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Header Color
+        header_color = "#2E7D32" if is_victory else "#C62828"
+
+        # Title Label
+        ctk.CTkLabel(
+            dialog,
+            text=title,
+            font=("Arial", 18, "bold"),
+            text_color=header_color,
+        ).pack(pady=(20, 10))
+
+        # Message Body
+        ctk.CTkLabel(
+            dialog,
+            text=message,
+            font=("Arial", 12),
+            wraplength=360,
+            justify="center",
+        ).pack(pady=10)
+
+        # OK / Close Button
+        ctk.CTkButton(
+            dialog,
+            text="Acknowledge",
+            fg_color=header_color,
+            width=120,
+            command=dialog.destroy,
+        ).pack(pady=(15, 10))
+
+
+    
 
 if __name__ == "__main__":
     app = SimulatorApp()
