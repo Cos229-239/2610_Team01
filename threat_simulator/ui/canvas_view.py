@@ -251,7 +251,7 @@ class NetworkCanvas(ctk.CTkCanvas):
             if clicked_idx is not None:
                 self.selected_node_idx = clicked_idx
                 if callable(self.node_select_callback):
-                    self.node_select_callback(self.graph.nodes[clicked_idx])
+                    self.node_select_callback(clicked_idx)  # Pass int index to match app.py
 
     def _on_drag(self, event):
         world_x, world_y = self.screen_to_world(event.x, event.y)
