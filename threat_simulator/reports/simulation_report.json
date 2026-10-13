@@ -1,108 +1,108 @@
 {
-    "timestamp": "2026-10-13 16:39:19",
+    "timestamp": "2026-10-13 16:42:56",
     "total_nodes": 20,
-    "infected_nodes": 19,
-    "healthy_nodes": 1,
+    "infected_nodes": 16,
+    "healthy_nodes": 4,
     "containment_successful": false,
     "nodes": [
         {
-            "id": "PC-01",
+            "id": "ST-01",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "ST-02",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "ST-03",
             "status": "WARNING",
-            "is_patient_zero": true
+            "is_patient_zero": false
         },
         {
-            "id": "PC-02",
+            "id": "ST-04",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-03",
+            "id": "ST-05",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-04",
+            "id": "ST-06",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-05",
+            "id": "ST-07",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-06",
+            "id": "ST-08",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-07",
+            "id": "ST-09",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-08",
+            "id": "ST-10",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-09",
+            "id": "ST-11",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-10",
+            "id": "ST-12",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-11",
+            "id": "ST-13",
+            "status": "WARNING",
+            "is_patient_zero": false
+        },
+        {
+            "id": "ST-14",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-12",
+            "id": "ST-15",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-13",
+            "id": "ST-16",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-14",
+            "id": "ST-17",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
-            "id": "PC-15",
-            "status": "INFECTED",
-            "is_patient_zero": false
-        },
-        {
-            "id": "PC-16",
-            "status": "INFECTED",
-            "is_patient_zero": false
-        },
-        {
-            "id": "PC-17",
-            "status": "INFECTED",
-            "is_patient_zero": false
-        },
-        {
-            "id": "PC-18",
+            "id": "ST-18",
             "status": "INFECTED",
             "is_patient_zero": false
         },
         {
             "id": "PC-19",
-            "status": "INFECTED",
+            "status": "HEALTHY",
             "is_patient_zero": false
         },
         {
             "id": "PC-20",
-            "status": "INFECTED",
+            "status": "HEALTHY",
             "is_patient_zero": false
         }
     ]

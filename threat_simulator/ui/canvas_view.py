@@ -30,34 +30,45 @@ EDGE_COLORS = {
 }
 
 
-class SpriteSheetManager:
-    def __init__(self, atlas_path="assets/zombie_spritesheet_v1.png"):
-        if os.path.exists(atlas_path):
-            self.atlas = Image.open(atlas_path).convert("RGBA")
-        else:
-            self.atlas = Image.new("RGBA", (512, 256), (0, 0, 0, 0))
-
-        self.regions = {
-            "BIOHAZARD": (0, 0, 128, 128),
-            "SKULL": (135, 2, 167, 34),
-            "CRAWLER": (16, 130, 48, 162),
-            "SHAMBLER": (80, 130, 112, 162),
-            "ROUTER": (304, 130, 336, 162),
-            "LAPTOP": (368, 130, 400, 162),
-        }
+class AssetManager:
+    def __init__(self, assets_dir="assets"):
+        self.assets_dir = assets_dir
         self._cache = {}
+
+        # Mapping node types/statuses to image filenames in your assets folder
+        self.image_files = {
+            "BIOHAZARD": "noun_ComputerVirus_8334320_@700.png",
+            "CRAWLER": "noun_trojanvirus_8281247_@700.png",
+            "ROUTER": "noun_Router_7285821_@700.png",
+            "LAPTOP": "noun_Laptop_8479843_@700.png",
+            "PC": "noun_Computer_6856966_@700.png",
+            "SERVER": "noun_Server_1211215_@700.png",
+            "PHONE": "noun_mobilephone_8150848_@700.png",
+        }
 
     def get_sprite(self, name, size=(32, 32)):
         cache_key = (name, size)
-        if name not in self.regions:
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        filename = self.image_files.get(name)
+        if not filename:
             return None
-        if cache_key not in self._cache:
-            crop_box = self.regions[name]
-            sprite = self.atlas.crop(crop_box)
+
+        path = os.path.join(self.assets_dir, filename)
+        if not os.path.exists(path):
+            # Fallback check if running from inside threat_simulator directory
+            path = os.path.join("..", self.assets_dir, filename)
+
+        if os.path.exists(path):
+            img = Image.open(path).convert("RGBA")
             if size:
-                sprite = sprite.resize(size, Image.Resampling.LANCZOS)
-            self._cache[cache_key] = ImageTk.PhotoImage(sprite)
-        return self._cache[cache_key]
+                img = img.resize(size, Image.Resampling.LANCZOS)
+            photo_img = ImageTk.PhotoImage(img)
+            self._cache[cache_key] = photo_img
+            return photo_img
+
+        return None
 
 
 class NetworkCanvas(ctk.CTkCanvas):
@@ -96,7 +107,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.bind("<Button-4>", self._on_zoom)     # Linux scroll up
         self.bind("<Button-5>", self._on_zoom)     # Linux scroll down
 
-        self.sprite_manager = SpriteSheetManager()
+        self.sprite_manager = AssetManager()
 
     def set_node_select_callback(self, callback):
         """Registers a callback function invoked when a node is selected in SELECT mode."""
