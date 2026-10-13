@@ -1,5 +1,16 @@
 import os
+import sys
+import json
 from typing import Dict, Optional, Tuple
+
+# Add project root directory to sys.path to resolve 'utils'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from utils.exporter import export_simulation_summary
+
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
@@ -176,7 +187,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         return None
 
     def _prompt_firewall_password(self, edge_idx: int, is_update: bool = False):
-        """Displays dialog allowing the user to assign or update a custom password key."""
         title_text = "Update Firewall Password" if is_update else "Assign Firewall Password"
         prompt_text = (
             "Enter New Encryption Key (resets crack progress):"
@@ -251,7 +261,7 @@ class NetworkCanvas(ctk.CTkCanvas):
             if clicked_idx is not None:
                 self.selected_node_idx = clicked_idx
                 if callable(self.node_select_callback):
-                    self.node_select_callback(clicked_idx)  # Pass int index to match app.py
+                    self.node_select_callback(clicked_idx)
 
     def _on_drag(self, event):
         world_x, world_y = self.screen_to_world(event.x, event.y)
@@ -476,3 +486,87 @@ class NetworkCanvas(ctk.CTkCanvas):
                 fill=font_color,
                 font=("Courier", font_sz, "bold"),
             )
+
+
+class CanvasView(ctk.CTkFrame):
+    def __init__(self, parent, simulation):
+        super().__init__(parent)
+        self.simulation = simulation
+
+        # Embed the NetworkCanvas inside this view frame
+        self.canvas = NetworkCanvas(self)
+        self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Export button placed at the bottom of the view
+        self.export_button = ctk.CTkButton(
+            self, 
+            text="Export Simulation Report", 
+            command=self.trigger_export
+        )
+        self.export_button.pack(pady=10)
+
+    def trigger_export(self):
+        """Calls the exporter and displays a popup modal with the report summary."""
+        try:
+            graph = getattr(self.simulation, "graph", None) or getattr(self.canvas, "graph", None)
+            if not graph:
+                print("Export failed: Active simulation graph not found.")
+                return
+            
+            filepath = export_simulation_summary(graph)
+            
+            # Read back the exported JSON to show in the popup preview
+            with open(filepath, "r") as f:
+                report_data = json.load(f)
+            
+            # Create a modal popup window (CTkToplevel)
+            popup = ctk.CTkToplevel(self)
+            popup.title("Simulation Report Exported")
+            popup.geometry("480x380")
+            popup.transient(self)
+            popup.grab_set()
+
+            ctk.CTkLabel(
+                popup, 
+                text="Report Saved Successfully!", 
+                font=("Arial", 14, "bold"), 
+                text_color="#2E7D32"
+            ).pack(pady=(15, 5))
+            
+            ctk.CTkLabel(
+                popup, 
+                text=f"Saved to: {filepath}", 
+                font=("Arial", 10), 
+                text_color="gray"
+            ).pack(pady=5)
+
+            # Text box showing JSON summary preview
+            textbox = ctk.CTkTextbox(popup, width=430, height=220)
+            textbox.pack(padx=10, pady=10)
+            textbox.insert("1.0", json.dumps(report_data, indent=2))
+            textbox.configure(state="disabled")
+
+            ctk.CTkButton(
+                popup, 
+                text="Close", 
+                command=popup.destroy
+            ).pack(pady=(5, 15))
+
+        except Exception as e:
+            print(f"Export failed: {e}")
+
+            # Delegated methods required by app.py:
+    def render(self):
+        self.canvas.render()
+
+    def set_graph(self, graph):
+        self.canvas.set_graph(graph)
+
+    def set_mode(self, mode):
+        self.canvas.set_mode(mode)
+
+    def set_active_node_type(self, node_type):
+        self.canvas.set_active_node_type(node_type)
+
+    def set_node_select_callback(self, callback):
+        self.canvas.set_node_select_callback(callback)

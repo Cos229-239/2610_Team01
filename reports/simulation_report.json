@@ -1,0 +1,24 @@
+{
+    "timestamp": "2026-10-13 02:25:13",
+    "total_nodes": 3,
+    "infected_nodes": 1,
+    "healthy_nodes": 2,
+    "containment_successful": false,
+    "nodes": [
+        {
+            "id": 1,
+            "status": "HEALTHY",
+            "is_patient_zero": false
+        },
+        {
+            "id": 2,
+            "status": "INFECTED",
+            "is_patient_zero": true
+        },
+        {
+            "id": 3,
+            "status": "HEALTHY",
+            "is_patient_zero": false
+        }
+    ]
+}
