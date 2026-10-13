@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from core.topology import TopologyGenerator, NetworkGraph
 from core.simulation import SimulationEngine
-from ui.canvas_view import NetworkCanvas
+from ui.canvas_view import CanvasView
 from ui.telemetry_view import TelemetryPanel
 
 
@@ -192,8 +192,10 @@ class SimulatorApp(ctk.CTk):
         self.slider_def.set(0.5)
         self.slider_def.grid(row=0, column=3, padx=5, pady=5)
 
-        # Canvas
-        self.net_canvas = NetworkCanvas(left_frame)
+        # Canvas & export button view wrapper
+
+        
+        self.net_canvas = CanvasView(left_frame, self.sim_engine)
 
         self.net_canvas.set_node_select_callback(
             self.on_node_selected
