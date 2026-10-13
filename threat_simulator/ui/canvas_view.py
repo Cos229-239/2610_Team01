@@ -12,19 +12,11 @@ STATUS_COLORS = {
     "HEALTHY": "#69F0AE",
 }
 
-COLORBLIND_STATUS_COLORS = {
-    "INFECTED": "#D55E00",
-    "WARNING": "#CC79A7",
-    "HEALTHY": "#0072B2",
-    }
-
 EDGE_COLORS = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
     "HEALTHY": "#8b5a2b",
 }
-
-
 
 
 class SpriteSheetManager:
@@ -65,26 +57,96 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.active_node_type = "PC"
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
+        self.node_select_callback = None
+
+        # Viewport Transformations (Zoom & Pan)
+        self.zoom_factor: float = 1.0
+        self.pan_offset_x: float = 0.0
+        self.pan_offset_y: float = 0.0
+        self._pan_start_x: float = 0.0
+        self._pan_start_y: float = 0.0
 
         self.mouse_x: float = 0.0
         self.mouse_y: float = 0.0
 
-        # Stores button hitboxes for firewall password edit buttons: index -> (x1, y1, x2, y2)
         self.firewall_btn_bounds: Dict[int, Tuple[float, float, float, float]] = {}
 
+        # Primary Interaction Binds
         self.bind("<Button-1>", self._on_click)
         self.bind("<B1-Motion>", self._on_drag)
         self.bind("<Motion>", self._on_mouse_move)
 
-        self.node_select_callback = None
+        # Pan Binds (Right-Click Drag)
+        self.bind("<Button-3>", self._start_pan)
+        self.bind("<B3-Motion>", self._on_pan_drag)
+
+        # Zoom Binds (Mouse Wheel Across Platforms)
+        self.bind("<MouseWheel>", self._on_zoom)  # Windows / macOS
+        self.bind("<Button-4>", self._on_zoom)     # Linux scroll up
+        self.bind("<Button-5>", self._on_zoom)     # Linux scroll down
 
         self.sprite_manager = SpriteSheetManager()
 
-        self.colorblind_mode = False
+    def set_node_select_callback(self, callback):
+        """Registers a callback function invoked when a node is selected in SELECT mode."""
+        self.node_select_callback = callback
 
-    def set_colorblind_mode(self, enabled: bool):
-        self.colorblind_mode = enabled
+    # ------------------------------------------------------------------
+    # Viewport Coordinate Mapping
+    # ------------------------------------------------------------------
+
+    def world_to_screen(self, wx: float, wy: float) -> Tuple[float, float]:
+        """Converts graph world coordinates to canvas screen coordinates."""
+        sx = (wx * self.zoom_factor) + self.pan_offset_x
+        sy = (wy * self.zoom_factor) + self.pan_offset_y
+        return sx, sy
+
+    def screen_to_world(self, sx: float, sy: float) -> Tuple[float, float]:
+        """Converts canvas screen coordinates to graph world coordinates."""
+        wx = (sx - self.pan_offset_x) / self.zoom_factor
+        wy = (sy - self.pan_offset_y) / self.zoom_factor
+        return wx, wy
+
+    # ------------------------------------------------------------------
+    # Zoom & Pan Event Handlers
+    # ------------------------------------------------------------------
+
+    def _on_zoom(self, event):
+        """Zoom in / out centered around the cursor position."""
+        if event.num == 4 or event.delta > 0:
+            zoom_scale = 1.15
+        elif event.num == 5 or event.delta < 0:
+            zoom_scale = 0.85
+        else:
+            return
+
+        new_zoom = max(0.4, min(4.0, self.zoom_factor * zoom_scale))
+        if new_zoom == self.zoom_factor:
+            return
+
+        cursor_x, cursor_y = event.x, event.y
+        world_x, world_y = self.screen_to_world(cursor_x, cursor_y)
+
+        self.zoom_factor = new_zoom
+        self.pan_offset_x = cursor_x - (world_x * self.zoom_factor)
+        self.pan_offset_y = cursor_y - (world_y * self.zoom_factor)
+
         self.render()
+
+    def _start_pan(self, event):
+        """Records initial right-click anchor for panning."""
+        self._pan_start_x = event.x - self.pan_offset_x
+        self._pan_start_y = event.y - self.pan_offset_y
+
+    def _on_pan_drag(self, event):
+        """Updates offset when dragging with right-click."""
+        self.pan_offset_x = event.x - self._pan_start_x
+        self.pan_offset_y = event.y - self._pan_start_y
+        self.render()
+
+    # ------------------------------------------------------------------
+    # Canvas Mode Setup
+    # ------------------------------------------------------------------
 
     def set_mode(self, mode: str):
         self.mode = mode
@@ -95,26 +157,26 @@ class NetworkCanvas(ctk.CTkCanvas):
     def set_active_node_type(self, node_type: str):
         self.active_node_type = node_type
 
-    def set_node_select_callback(self, callback):
-        self.node_select_callback = callback
-
     def set_graph(self, graph: NetworkGraph):
         self.graph = graph
+        self.zoom_factor = 1.0
+        self.pan_offset_x = 0.0
+        self.pan_offset_y = 0.0
         self.render()
 
     def _get_node_at_pos(
-        self, x: float, y: float, radius: float = 16.0
+        self, wx: float, wy: float, radius: float = 16.0
     ) -> Optional[int]:
         if not self.graph:
             return None
         for i, node in enumerate(self.graph.nodes):
-            dist = ((node.x - x) ** 2 + (node.y - y) ** 2) ** 0.5
+            dist = ((node.x - wx) ** 2 + (node.y - wy) ** 2) ** 0.5
             if dist <= radius:
                 return i
         return None
 
     def _prompt_firewall_password(self, edge_idx: int, is_update: bool = False):
-        """Displays a modal dialog allowing the user to assign or update a custom password key."""
+        """Displays dialog allowing the user to assign or update a custom password key."""
         title_text = "Update Firewall Password" if is_update else "Assign Firewall Password"
         prompt_text = (
             "Enter New Encryption Key (resets crack progress):"
@@ -127,7 +189,6 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         if user_pwd is not None:
             if is_update:
-                # Update password directly and reset cracking progress without disarming barrier
                 edge = self.graph.edges[edge_idx]
                 if user_pwd.strip():
                     edge.password = user_pwd.strip().upper()[:6]
@@ -140,21 +201,17 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
-        self.mouse_x = float(event.x)
-        self.mouse_y = float(event.y)
+        world_x, world_y = self.screen_to_world(event.x, event.y)
+        self.mouse_x = world_x
+        self.mouse_y = world_y
 
-        # -------------------------------------------------------------
-        # FIREWALL BARRIER & PASSWORD BUTTON CLICK HANDLING
-        # -------------------------------------------------------------
         if self.mode == "FIREWALL":
-            # 1. Check if user clicked a Firewall Password Edit Button (⚙️)
             for edge_idx, (bx1, by1, bx2, by2) in self.firewall_btn_bounds.items():
                 if bx1 <= event.x <= bx2 and by1 <= event.y <= by2:
                     self._prompt_firewall_password(edge_idx, is_update=True)
                     return
 
-            # 2. Toggle or create firewall on nearest edge segment
-            edge_idx = self.graph.find_edge_near_point(event.x, event.y)
+            edge_idx = self.graph.find_edge_near_point(world_x, world_y)
             if edge_idx is not None:
                 edge = self.graph.edges[edge_idx]
                 if edge.is_firewall:
@@ -164,21 +221,13 @@ class NetworkCanvas(ctk.CTkCanvas):
                     self._prompt_firewall_password(edge_idx)
             return
 
-        clicked_idx = self._get_node_at_pos(event.x, event.y)
+        clicked_idx = self._get_node_at_pos(world_x, world_y)
 
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
                 self.graph.add_node(
-                    event.x,
-                    event.y,
-                    node_type=self.active_node_type
+                    world_x, world_y, node_type=self.active_node_type
                 )
-
-                new_index = len(self.graph.nodes) - 1
-
-                if self.node_select_callback:
-                    self.node_select_callback(new_index)
-
                 self.render()
 
         elif self.mode == "CONNECT_EDGE":
@@ -201,36 +250,35 @@ class NetworkCanvas(ctk.CTkCanvas):
         elif self.mode == "SELECT":
             if clicked_idx is not None:
                 self.selected_node_idx = clicked_idx
-
-                if self.node_select_callback:
-                    self.node_select_callback(clicked_idx)
-
-                
+                if callable(self.node_select_callback):
+                    self.node_select_callback(self.graph.nodes[clicked_idx])
 
     def _on_drag(self, event):
-        self.mouse_x = float(event.x)
-        self.mouse_y = float(event.y)
+        world_x, world_y = self.screen_to_world(event.x, event.y)
+        self.mouse_x = world_x
+        self.mouse_y = world_y
+
         if (
             self.mode == "SELECT"
             and self.selected_node_idx is not None
             and self.graph
         ):
             node = self.graph.nodes[self.selected_node_idx]
-            node.x = event.x
-            node.y = event.y
+            node.x = world_x
+            node.y = world_y
             self.render()
 
     def _on_mouse_move(self, event):
-        self.mouse_x = float(event.x)
-        self.mouse_y = float(event.y)
+        world_x, world_y = self.screen_to_world(event.x, event.y)
+        self.mouse_x = world_x
+        self.mouse_y = world_y
 
         if self.mode == "FIREWALL" and self.graph:
-            # Check hover over gear button
             is_hovering_btn = any(
                 bx1 <= event.x <= bx2 and by1 <= event.y <= by2
                 for bx1, by1, bx2, by2 in self.firewall_btn_bounds.values()
             )
-            hovered_edge = self.graph.find_edge_near_point(event.x, event.y)
+            hovered_edge = self.graph.find_edge_near_point(world_x, world_y)
 
             if is_hovering_btn:
                 self.config(cursor="hand2")
@@ -239,6 +287,10 @@ class NetworkCanvas(ctk.CTkCanvas):
         elif self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             self.render()
 
+    # ------------------------------------------------------------------
+    # Render Loop
+    # ------------------------------------------------------------------
+
     def render(self):
         self.delete("all")
         self.firewall_btn_bounds.clear()
@@ -246,15 +298,18 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph:
             return
 
+        zf = self.zoom_factor
+
         # 1. Render Edges & Firewall Security Barriers
         for index, edge in enumerate(self.graph.edges):
             if edge.u < len(self.graph.nodes) and edge.v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
+                s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
+                s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
 
                 if getattr(edge, "is_firewall", False):
-                    # Outer cyan security wall glow
                     self.create_line(
-                        n1.x, n1.y, n2.x, n2.y, fill="#00E5FF", width=6
+                        s1_x, s1_y, s2_x, s2_y, fill="#00E5FF", width=max(2, int(6 * zf))
                     )
 
                     progress = getattr(edge, "crack_progress", 0.0)
@@ -264,21 +319,21 @@ class NetworkCanvas(ctk.CTkCanvas):
                         else ("#FF9100" if progress > 0.3 else "#FFFFFF")
                     )
 
-                    # Core beam
                     self.create_line(
-                        n1.x, n1.y, n2.x, n2.y, fill=beam_color, width=2
+                        s1_x, s1_y, s2_x, s2_y, fill=beam_color, width=max(1, int(2 * zf))
                     )
 
-                    # Midpoint Firewall Badge & Password Display
-                    mid_x, mid_y = (n1.x + n2.x) / 2, (n1.y + n2.y) / 2
+                    mid_sx, mid_sy = (s1_x + s2_x) / 2, (s1_y + s2_y) / 2
                     pwd = getattr(edge, "password", "LOCK")
 
-                    # Badge background
+                    badge_w = int(30 * min(1.5, max(0.7, zf)))
+                    badge_h = int(14 * min(1.5, max(0.7, zf)))
+
                     self.create_rectangle(
-                        mid_x - 30,
-                        mid_y - 14,
-                        mid_x + 10,
-                        mid_y + 14,
+                        mid_sx - badge_w,
+                        mid_sy - badge_h,
+                        mid_sx + (badge_w // 3),
+                        mid_sy + badge_h,
                         fill="#002b36",
                         outline=beam_color,
                         width=2,
@@ -286,17 +341,16 @@ class NetworkCanvas(ctk.CTkCanvas):
 
                     label_text = f"🔑{pwd}\n{int(progress * 100)}%"
                     self.create_text(
-                        mid_x - 10,
-                        mid_y,
+                        mid_sx - (badge_w // 3),
+                        mid_sy,
                         text=label_text,
                         fill="#00E5FF",
-                        font=("Consolas", 7, "bold"),
+                        font=("Consolas", max(6, int(7 * zf)), "bold"),
                         justify="center",
                     )
 
-                    # Password Edit Button (⚙️)
-                    btn_x1, btn_y1 = mid_x + 12, mid_y - 14
-                    btn_x2, btn_y2 = mid_x + 32, mid_y + 14
+                    btn_x1, btn_y1 = mid_sx + (badge_w // 3) + 2, mid_sy - badge_h
+                    btn_x2, btn_y2 = mid_sx + badge_w + 4, mid_sy + badge_h
 
                     self.firewall_btn_bounds[index] = (btn_x1, btn_y1, btn_x2, btn_y2)
 
@@ -314,123 +368,111 @@ class NetworkCanvas(ctk.CTkCanvas):
                         (btn_y1 + btn_y2) / 2,
                         text="⚙️",
                         fill="#FFFFFF",
-                        font=("Arial", 9),
+                        font=("Arial", max(7, int(9 * zf))),
                     )
                 else:
                     edge_color = EDGE_COLORS.get(edge.status, "#444444")
-                    edge_width = 2 if edge.status != "HEALTHY" else 1
+                    edge_width = max(1, int((2 if edge.status != "HEALTHY" else 1) * zf))
                     self.create_line(
-                        n1.x, n1.y, n2.x, n2.y, fill=edge_color, width=edge_width
+                        s1_x, s1_y, s2_x, s2_y, fill=edge_color, width=edge_width
                     )
 
         # 2. Render Connection Preview Line
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             if self.selected_node_idx < len(self.graph.nodes):
                 src = self.graph.nodes[self.selected_node_idx]
+                src_sx, src_sy = self.world_to_screen(src.x, src.y)
+                cur_sx, cur_sy = self.world_to_screen(self.mouse_x, self.mouse_y)
+
                 self.create_line(
-                    src.x,
-                    src.y,
-                    self.mouse_x,
-                    self.mouse_y,
+                    src_sx,
+                    src_sy,
+                    cur_sx,
+                    cur_sy,
                     fill="#FFD54F",
-                    width=2,
+                    width=max(1, int(2 * zf)),
                     dash=(4, 4),
                 )
 
         # 3. Render Nodes and Sprites
         for i, node in enumerate(self.graph.nodes):
+            sx, sy = self.world_to_screen(node.x, node.y)
             type_cfg = NODE_TYPES.get(
                 getattr(node, "node_type", "PC"), NODE_TYPES.get("PC")
             )
-            radius = type_cfg.radius if type_cfg else 14
-
-            node_colors = (
-                COLORBLIND_STATUS_COLORS
-                if self.colorblind_mode
-                else STATUS_COLORS
-            )
-
-            status_color = node_colors.get(
-                node.status,
-                "#888888"
-            )
-
-            self.create_oval(
-                node.x - radius -3,
-                node.y - radius - 3,
-                node.x + radius + 3,
-                node.y + radius + 3,
-                outline=status_color,
-                width=3,
-            )
-
+            radius = int((type_cfg.radius if type_cfg else 14) * zf)
 
             if node.is_patient_zero:
                 self.create_oval(
-                    node.x - 32,
-                    node.y - 32,
-                    node.x + 32,
-                    node.y + 32,
+                    sx - int(32 * zf),
+                    sy - int(32 * zf),
+                    sx + int(32 * zf),
+                    sy + int(32 * zf),
                     fill="#ff3b3b",
                     outline="",
                     stipple="gray50",
                 )
                 self.create_oval(
-                    node.x - 20,
-                    node.y - 20,
-                    node.x + 20,
-                    node.y + 20,
+                    sx - int(20 * zf),
+                    sy - int(20 * zf),
+                    sx + int(20 * zf),
+                    sy + int(20 * zf),
                     fill="#ff7b00",
                     outline="#D32F2F",
-                    width=2,
+                    width=max(1, int(2 * zf)),
                 )
             elif self.mode == "CONNECT_EDGE" and i == self.selected_node_idx:
                 self.create_oval(
-                    node.x - radius - 6,
-                    node.y - radius - 6,
-                    node.x + radius + 6,
-                    node.y + radius + 6,
+                    sx - radius - int(6 * zf),
+                    sy - radius - int(6 * zf),
+                    sx + radius + int(6 * zf),
+                    sy + radius + int(6 * zf),
                     outline="#FFD54F",
-                    width=3,
+                    width=max(1, int(3 * zf)),
                 )
             elif self.mode == "SELECT" and i == self.selected_node_idx:
                 self.create_oval(
-                    node.x - radius - 4,
-                    node.y - radius - 4,
-                    node.x + radius + 4,
-                    node.y + radius + 4,
+                    sx - radius - int(4 * zf),
+                    sy - radius - int(4 * zf),
+                    sx + radius + int(4 * zf),
+                    sy + radius + int(4 * zf),
                     outline="#333333",
-                    width=2,
+                    width=max(1, int(2 * zf)),
                 )
+
+            sprite_size = max(16, int(32 * zf))
 
             if node.is_patient_zero:
                 sprite_img = self.sprite_manager.get_sprite(
-                    "BIOHAZARD", size=(32, 32)
+                    "BIOHAZARD", size=(sprite_size, sprite_size)
                 )
             elif getattr(node, "status", "") == "INFECTED":
                 sprite_img = self.sprite_manager.get_sprite(
-                    "CRAWLER", size=(32, 32)
+                    "CRAWLER", size=(sprite_size, sprite_size)
                 )
             elif getattr(node, "node_type", "") == "Router":
                 sprite_img = self.sprite_manager.get_sprite(
-                    "ROUTER", size=(32, 32)
+                    "ROUTER", size=(sprite_size, sprite_size)
                 )
             else:
+                sprite_size_laptop = max(14, int(28 * zf))
                 sprite_img = self.sprite_manager.get_sprite(
-                    "LAPTOP", size=(28, 28)
+                    "LAPTOP", size=(sprite_size_laptop, sprite_size_laptop)
                 )
 
             if sprite_img:
                 self.create_image(
-                    node.x, node.y, image=sprite_img, anchor="center"
+                    sx, sy, image=sprite_img, anchor="center"
                 )
 
             label = "PATIENT ZERO" if node.is_patient_zero else node.id
             font_color = "#B71C1C" if node.is_patient_zero else "#222222"
+            font_sz = max(6, int(8 * zf))
+
             self.create_text(
-                node.x,
-                node.y + 22,
+                sx,
+                sy + int(22 * zf),
                 text=label,
                 fill=font_color,
-                font=("Courier", 8, "bold"),
+                font=("Courier", font_sz, "bold"),
             )
