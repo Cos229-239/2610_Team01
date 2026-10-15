@@ -35,6 +35,12 @@ COLORBLIND_STATUS_COLORS = {
     "HEALTHY": "#0072B2",
     }
 
+COLORBLIND_EDGE_COLORS = {
+    "INFECTED": "#D55E00",
+    "WARNING": "#CC79A7",
+    "HEALTHY": "#0072B2",
+    }
+
 
 class AssetManager:
     def __init__(self, assets_dir="assets"):
@@ -404,7 +410,12 @@ class NetworkCanvas(ctk.CTkCanvas):
                         font=("Arial", max(7, int(9 * zf))),
                     )
                 else:
-                    edge_color = EDGE_COLORS.get(edge.status, "#444444")
+                    edge_colors = (
+                        COLORBLIND_EDGE_COLORS
+                        if self.colorblind_mode
+                        else EDGE_COLORS
+                    )
+                    edge_color = edge_colors.get(edge.status, "#444444")
                     edge_width = max(1, int((2 if edge.status != "HEALTHY" else 1) * zf))
                     self.create_line(
                         s1_x, s1_y, s2_x, s2_y, fill=edge_color, width=edge_width
