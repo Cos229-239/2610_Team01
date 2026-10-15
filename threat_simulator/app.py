@@ -295,18 +295,23 @@ class SimulatorApp(ctk.CTk):
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
         settings_window.geometry("300x200")
+        settings_window.resizable(False, False)
 
-        colorblind_var = ctk.BooleanVar(
-            value=self.settings["colorblind_mode"]
-        )
+        # Force the window to appear on top of the main application
+        settings_window.transient(self)          # tie it to the main window
+        settings_window.grab_set()               # make it modal
+        settings_window.focus_force()            # give it keyboard focus
+        settings_window.lift()                   # raise it above other windows
+        # Small delay helps on some platforms (Windows/Linux)
+        settings_window.after(10, settings_window.lift)
+
+        colorblind_var = ctk.BooleanVar(value=self.settings["colorblind_mode"])
 
         ctk.CTkCheckBox(
             settings_window,
             text="Colorblind Mode",
             variable=colorblind_var,
-            command=lambda: self.toggle_colorblind(
-                colorblind_var.get()
-            )
+            command=lambda: self.toggle_colorblind(colorblind_var.get())
         ).pack(padx=20, pady=20, anchor="w")
 
     def toggle_colorblind(self, enabled: bool):
