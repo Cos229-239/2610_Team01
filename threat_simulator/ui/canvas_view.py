@@ -29,6 +29,12 @@ EDGE_COLORS = {
     "HEALTHY": "#8b5a2b",
 }
 
+COLORBLIND_STATUS_COLORS = {
+    "INFECTED": "#D55E00",
+    "WARNING": "#CC79A7",
+    "HEALTHY": "#0072B2",
+    }
+
 
 class AssetManager:
     def __init__(self, assets_dir="assets"):
@@ -80,6 +86,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
         self.node_select_callback = None
+        self.colorblind_mode = False
 
         # Viewport Transformations (Zoom & Pan)
         self.zoom_factor: float = 1.0
@@ -112,6 +119,11 @@ class NetworkCanvas(ctk.CTkCanvas):
     def set_node_select_callback(self, callback):
         """Registers a callback function invoked when a node is selected in SELECT mode."""
         self.node_select_callback = callback
+
+
+    def set_colorblind_mode(self, enabled: bool):
+        self.colorblind_mode = enabled
+        self.render()
 
     # ------------------------------------------------------------------
     # Viewport Coordinate Mapping
@@ -423,6 +435,26 @@ class NetworkCanvas(ctk.CTkCanvas):
             )
             radius = int((type_cfg.radius if type_cfg else 14) * zf)
 
+            node_colors = (
+                COLORBLIND_STATUS_COLORS
+                if self.colorblind_mode
+                else STATUS_COLORS
+            )
+
+            status_color = node_colors.get(
+                node.status,
+                "#888888"
+            )
+
+            self.create_oval(
+                sx - radius - 5,
+                sy - radius - 5,
+                sx + radius + 5,
+                sy + radius + 5,
+                outline=status_color,
+                width=3,
+            )
+
             if node.is_patient_zero:
                 self.create_oval(
                     sx - int(32 * zf),
@@ -581,3 +613,6 @@ class CanvasView(ctk.CTkFrame):
 
     def set_node_select_callback(self, callback):
         self.canvas.set_node_select_callback(callback)
+
+    def set_colorblind_mode(self, enabled):
+        self.canvas.set_colorblind_mode(enabled)
