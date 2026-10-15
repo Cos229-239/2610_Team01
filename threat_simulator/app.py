@@ -3,6 +3,7 @@ from core.topology import TopologyGenerator, NetworkGraph
 from core.simulation import SimulationEngine
 from ui.canvas_view import CanvasView
 from ui.telemetry_view import TelemetryPanel
+from ui.tooltip import ToolTip
 
 
 class SimulatorApp(ctk.CTk):
@@ -107,6 +108,11 @@ class SimulatorApp(ctk.CTk):
         )
         self.level_menu.grid(row=0, column=1, padx=5, pady=5)
 
+        ToolTip(
+            self.level_menu,
+            "Select a predefined network topology or start with a blank canvas."
+        )
+
         # Segmented Button for Canvas Editing Mode (Includes Firewall)
         self.mode_selector = ctk.CTkSegmentedButton(
             top_ctrl,
@@ -128,6 +134,11 @@ class SimulatorApp(ctk.CTk):
         )
         self.device_menu.grid(row=0, column=4, padx=5, pady=5)
 
+        ToolTip(
+            self.device_menu,
+            "Choose what device type will be placed when adding nodes."
+        )
+
         # Spread AI Strategy Selector
         ctk.CTkLabel(top_ctrl, text="AI Mode:", font=("Arial", 11)).grid(
             row=0, column=5, padx=(10, 2), pady=5
@@ -138,6 +149,11 @@ class SimulatorApp(ctk.CTk):
             width=110,
         )
         self.ai_mode_menu.grid(row=0, column=6, padx=5, pady=5)
+
+        ToolTip(
+            self.ai_mode_menu,
+            "Strategic AI targets the most effective paths. Uniform AI spreads randomly."
+        )
 
         ctk.CTkButton(
             top_ctrl,
@@ -175,6 +191,11 @@ class SimulatorApp(ctk.CTk):
         self.slider_inf.set(0.3)
         self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
 
+        ToolTip(
+            self.slider_inf,
+            "Controls how likely an infected node is to spread the outbreak."
+        )
+
         ctk.CTkLabel(slider_frame, text="Defense Power:").grid(
             row=0, column=2, padx=5, pady=5
         )
@@ -191,6 +212,11 @@ class SimulatorApp(ctk.CTk):
         )
         self.slider_def.set(0.5)
         self.slider_def.grid(row=0, column=3, padx=5, pady=5)
+
+        ToolTip(
+            self.slider_def,
+            "Increase the network's ability to resist infection."
+        )
 
         # Canvas & export button view wrapper
 
@@ -217,6 +243,27 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkButton(
             btn_frame, text="Play", fg_color="green", command=self.play_sim
         ).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+        self.play_button = ctk.CTkButton(
+            btn_frame,
+            text="Play",
+            fg_color="green",
+            command=self.play_sim
+        )
+
+        self.play_button.grid(
+            row=0,
+            column=0,
+            padx=5,
+            pady=5,
+            sticky="ew"
+        )
+
+        ToolTip(
+            self.play_button,
+            "Start the simulation."
+        )
+
         ctk.CTkButton(
             btn_frame, text="Pause", fg_color="red", command=self.pause_sim
         ).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
