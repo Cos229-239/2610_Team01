@@ -1,22 +1,42 @@
 {
-    "timestamp": "2026-10-13 02:25:13",
-    "total_nodes": 3,
-    "infected_nodes": 1,
-    "healthy_nodes": 2,
-    "containment_successful": false,
+    "timestamp": "2026-10-15 21:39:14",
+    "total_nodes": 7,
+    "infected_nodes": 0,
+    "healthy_nodes": 7,
+    "containment_successful": true,
     "nodes": [
         {
-            "id": 1,
+            "id": "PC-01",
             "status": "HEALTHY",
             "is_patient_zero": false
         },
         {
-            "id": 2,
-            "status": "INFECTED",
-            "is_patient_zero": true
+            "id": "PC-02",
+            "status": "HEALTHY",
+            "is_patient_zero": false
         },
         {
-            "id": 3,
+            "id": "PC-03",
+            "status": "HEALTHY",
+            "is_patient_zero": false
+        },
+        {
+            "id": "RO-04",
+            "status": "HEALTHY",
+            "is_patient_zero": false
+        },
+        {
+            "id": "RO-05",
+            "status": "HEALTHY",
+            "is_patient_zero": false
+        },
+        {
+            "id": "RO-06",
+            "status": "HEALTHY",
+            "is_patient_zero": false
+        },
+        {
+            "id": "MO-07",
             "status": "HEALTHY",
             "is_patient_zero": false
         }
