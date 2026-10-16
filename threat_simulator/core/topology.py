@@ -1,8 +1,33 @@
 import math
 import random
+import string
 from dataclasses import dataclass, field
 from typing import List, Optional
 from core.node_types import NODE_TYPES
+
+
+def calculate_password_search_space(password: str) -> int:
+    """Calculates total combination space based on password length and character set diversity."""
+    if not password:
+        return 10_000  # Default baseline for empty password
+
+    has_lower = any(c in string.ascii_lowercase for c in password)
+    has_upper = any(c in string.ascii_uppercase for c in password)
+    has_digit = any(c in string.digits for c in password)
+    has_special = any(c in string.punctuation for c in password)
+
+    charset_size = 0
+    if has_lower:
+        charset_size += 26
+    if has_upper:
+        charset_size += 26
+    if has_digit:
+        charset_size += 10
+    if has_special:
+        charset_size += 32
+
+    charset_size = max(charset_size, 16)  # Minimum default charset size
+    return charset_size ** len(password)
 
 
 @dataclass
@@ -22,8 +47,10 @@ class Edge:
     v: int
     status: str = "HEALTHY"
     is_firewall: bool = False
-    password: str = ""             # Random or user-assigned encryption key
+    password: str = ""             # Encryption key
     crack_progress: float = 0.0     # Cracking percentage (0.0 to 1.0)
+    crack_attempts: int = 0         # Total brute-force tries attempted
+    required_attempts: int = 10000  # Total combinations required to breach
 
 
 @dataclass
@@ -81,7 +108,6 @@ class NetworkGraph:
         self, px: float, py: float, tolerance: float = 10.0
     ) -> Optional[int]:
         """Calculates distance from point (px, py) to all edges and returns
-
         the index of the edge closest to the point within a tolerance radius.
         """
         for index, edge in enumerate(self.edges):
@@ -93,7 +119,6 @@ class NetworkGraph:
                 if dx == 0 and dy == 0:
                     continue
 
-                # Projection parameter t along line segment
                 t = max(
                     0.0,
                     min(
@@ -102,30 +127,34 @@ class NetworkGraph:
                     ),
                 )
 
-                # Projection coordinates
                 proj_x = n1.x + t * dx
                 proj_y = n1.y + t * dy
 
-                # Distance calculation
                 dist = math.hypot(px - proj_x, py - proj_y)
                 if dist <= tolerance:
                     return index
         return None
 
     def toggle_firewall_at_index(self, index: int, custom_pwd: str = "") -> bool:
-        """Toggles an active firewall barrier and assigns a custom or randomized password key."""
+        """Toggles an active firewall barrier, sets a custom or random password key,
+        and computes the total search space complexity.
+        """
         if 0 <= index < len(self.edges):
             edge = self.edges[index]
             edge.is_firewall = not edge.is_firewall
             edge.crack_progress = 0.0
+            edge.crack_attempts = 0
 
             if edge.is_firewall:
                 if custom_pwd and custom_pwd.strip():
-                    edge.password = custom_pwd.strip().upper()[:6]
+                    edge.password = custom_pwd.strip()[:6]
                 else:
                     edge.password = "".join(random.choices("0123456789ABCDEF", k=4))
+
+                edge.required_attempts = calculate_password_search_space(edge.password)
             else:
                 edge.password = ""
+                edge.required_attempts = 0
             return True
         return False
 
@@ -142,6 +171,8 @@ class NetworkGraph:
             edge.is_firewall = False
             edge.password = ""
             edge.crack_progress = 0.0
+            edge.crack_attempts = 0
+            edge.required_attempts = 0
 
     def clear(self):
         """Clears all nodes and edges from the graph instance."""
