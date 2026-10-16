@@ -7,27 +7,35 @@ from core.node_types import NODE_TYPES
 
 
 def calculate_password_search_space(password: str) -> int:
-    """Calculates total combination space based on password length and character set diversity."""
-    if not password:
-        return 10_000  # Default baseline for empty password
+    """Calculates exact total combination pool (N^L) based on length and character set diversity."""
+    if not password or not password.strip():
+        return 50  # Instant threshold for empty/blank keys
 
-    has_lower = any(c in string.ascii_lowercase for c in password)
-    has_upper = any(c in string.ascii_uppercase for c in password)
-    has_digit = any(c in string.digits for c in password)
-    has_special = any(c in string.punctuation for c in password)
+    pwd = password.strip()
+    length = len(pwd)
 
+    # Detect character set presence
+    has_digit = any(c in string.digits for c in pwd)
+    has_lower = any(c in string.ascii_lowercase for c in pwd)
+    has_upper = any(c in string.ascii_uppercase for c in pwd)
+    has_symbol = any(c in string.punctuation for c in pwd)
+
+    # Build exact character set size (N)
     charset_size = 0
+    if has_digit:
+        charset_size += 10
     if has_lower:
         charset_size += 26
     if has_upper:
         charset_size += 26
-    if has_digit:
-        charset_size += 10
-    if has_special:
+    if has_symbol:
         charset_size += 32
 
-    charset_size = max(charset_size, 16)  # Minimum default charset size
-    return charset_size ** len(password)
+    # If password consists of characters outside predefined sets, fallback to minimum
+    charset_size = max(charset_size, 10)  # Pure numeric minimum
+    
+    # Combination space = N^L
+    return charset_size ** length
 
 
 @dataclass
@@ -50,7 +58,7 @@ class Edge:
     password: str = ""             # Encryption key
     crack_progress: float = 0.0     # Cracking percentage (0.0 to 1.0)
     crack_attempts: int = 0         # Total brute-force tries attempted
-    required_attempts: int = 10000  # Total combinations required to breach
+    required_attempts: int = 0      # Total combinations required to breach
 
 
 @dataclass
@@ -149,7 +157,7 @@ class NetworkGraph:
                 if custom_pwd and custom_pwd.strip():
                     edge.password = custom_pwd.strip()[:6]
                 else:
-                    edge.password = "".join(random.choices("0123456789ABCDEF", k=4))
+                    edge.password = "".join(random.choices("0123456789", k=3))  # Default short numeric key
 
                 edge.required_attempts = calculate_password_search_space(edge.password)
             else:

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple, Optional
 
 from core.node_types import NODE_TYPES
-from core.topology import NetworkGraph
+from core.topology import NetworkGraph, calculate_password_search_space
 
 # Attempt C++ module import with graceful fallback
 try:
@@ -134,12 +134,34 @@ class SimulationEngine:
             self._record_snapshot(graph, telemetry)
             return telemetry
 
-        # Escalation calculation
-        escalation_factor = 1.0 + min(1.5, self.step_counter * 0.05)
-        effective_inf_rate = min(1.0, inf_rate * escalation_factor)
+        # -------------------------------------------------------------
+        # CAPTURE-BASED 100X THREAT ESCALATION
+        # -------------------------------------------------------------
+        currently_infected = {
+            i
+            for i, node in enumerate(graph.nodes)
+            if node.status == "INFECTED" or node.is_patient_zero
+        }
+        if not currently_infected and graph.nodes:
+            p0_idx = graph.get_patient_zero_index()
+            graph.nodes[p0_idx].status = "INFECTED"
+            currently_infected.add(p0_idx)
+
+        infected_cnt = len(currently_infected)
+        capture_ratio = infected_cnt / float(max(1, total_nodes))
+
+        # Base time escalation (+2% per tick, capped at 1.5x)
+        time_escalation = 1.0 + min(0.5, self.step_counter * 0.02)
+
+        # Node capture multiplier: Exponential curve scaling from 1.0x up to 100.0x
+        capture_escalation = 1.0 + (99.0 * (capture_ratio ** 1.5))
+
+        # Combined AI threat escalation multiplier capped at 100x max strength
+        escalation_factor = min(100.0, time_escalation * capture_escalation)
+        effective_inf_rate = min(1.0, inf_rate * (escalation_factor ** 0.35))
 
         # Defense fatigue under persistent infection
-        defense_fatigue = max(0.4, 1.0 - (self.step_counter * 0.015))
+        defense_fatigue = max(0.2, 1.0 - (self.step_counter * 0.015))
         effective_def_power = def_power * defense_fatigue
 
         # -------------------------------------------------------------
@@ -152,14 +174,17 @@ class SimulationEngine:
                 
                 # Apply brute-force pressure if bordering an infected node
                 if u_inf or v_inf:
-                    # Guesses per tick scaled by infection rate & escalation factor
-                    base_tries_per_step = 250
-                    tries = int(base_tries_per_step * effective_inf_rate * escalation_factor)
+                    # Dynamically compute search space if uninitialized
+                    req_attempts = getattr(edge, "required_attempts", 0)
+                    if req_attempts <= 0:
+                        req_attempts = calculate_password_search_space(edge.password)
+                        edge.required_attempts = req_attempts
+
+                    # Base cracking throughput (5,000 tries/step) scaled by botnet power
+                    base_tries = 5000
+                    tries = int(base_tries * effective_inf_rate * (escalation_factor ** 1.3))
                     
                     edge.crack_attempts = getattr(edge, "crack_attempts", 0) + tries
-                    req_attempts = getattr(edge, "required_attempts", 10_000)
-                    
-                    # Update progress percentage relative to total required combinations
                     edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
 
                     # Breach and disarm firewall upon reaching 100%
@@ -178,17 +203,6 @@ class SimulationEngine:
             if edge.u < total_nodes and edge.v < total_nodes:
                 adj[edge.u].append(edge.v)
                 adj[edge.v].append(edge.u)
-
-        # 2. Identify Currently Infected Nodes
-        currently_infected = {
-            i
-            for i, node in enumerate(graph.nodes)
-            if node.status == "INFECTED" or node.is_patient_zero
-        }
-        if not currently_infected and graph.nodes:
-            p0_idx = graph.get_patient_zero_index()
-            graph.nodes[p0_idx].status = "INFECTED"
-            currently_infected.add(p0_idx)
 
         # -------------------------------------------------------------
         # PHASE A: INFECTION SPREAD
@@ -217,7 +231,7 @@ class SimulationEngine:
                     for t_idx in attack_candidates
                 ]
                 ranked_targets.sort(key=lambda x: x[1], reverse=True)
-                max_breaches = max(1, int(effective_inf_rate * 4))
+                max_breaches = max(1, int(effective_inf_rate * (4 + int(escalation_factor * 0.1))))
                 best_target_idx, _ = ranked_targets[0]
                 best_node = graph.nodes[best_target_idx]
                 device_type = getattr(best_node, "node_type", "PC")
@@ -336,8 +350,8 @@ class SimulationEngine:
 
         if infected_cnt == 0:
             status_text = "THREAT NEUTRALIZED - ALL CLEAN"
-        elif escalation_factor > 1.8:
-            status_text = "MUTATED THREAT ESCALATION"
+        elif escalation_factor > 25.0:
+            status_text = "OVERWHELMING BOTNET ESCALATION"
         elif threat_pct > 75.0:
             status_text = "CRITICAL OUTBREAK"
         else:
