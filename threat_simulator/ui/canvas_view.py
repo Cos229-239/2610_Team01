@@ -15,25 +15,33 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from core.node_types import NODE_TYPES
-from core.topology import NetworkGraph
+from core.topology import NetworkGraph, calculate_password_search_space
 
-STATUS_COLORS = {
+# Standard Palette (Red / Amber / Green)
+STATUS_COLORS_STD = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
     "HEALTHY": "#69F0AE",
 }
 
-EDGE_COLORS = {
+EDGE_COLORS_STD = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
     "HEALTHY": "#8b5a2b",
 }
 
-COLORBLIND_STATUS_COLORS = {
+# Colorblind-Friendly Palette (High Contrast Orange-Red / Amber / Blue)
+STATUS_COLORS_CB = {
+    "INFECTED": "#D55E00",  # Okabe-Ito Vermillion
+    "WARNING": "#E69F00",   # Okabe-Ito Amber
+    "HEALTHY": "#0072B2",   # Okabe-Ito Blue
+}
+
+EDGE_COLORS_CB = {
     "INFECTED": "#D55E00",
-    "WARNING": "#CC79A7",
+    "WARNING": "#E69F00",
     "HEALTHY": "#0072B2",
-    }
+}
 
 
 class AssetManager:
@@ -41,7 +49,6 @@ class AssetManager:
         self.assets_dir = assets_dir
         self._cache = {}
 
-        # Mapping node types/statuses to image filenames in your assets folder
         self.image_files = {
             "BIOHAZARD": "noun_ComputerVirus_8334320_@700.png",
             "CRAWLER": "noun_trojanvirus_8281247_@700.png",
@@ -63,7 +70,6 @@ class AssetManager:
 
         path = os.path.join(self.assets_dir, filename)
         if not os.path.exists(path):
-            # Fallback check if running from inside threat_simulator directory
             path = os.path.join("..", self.assets_dir, filename)
 
         if os.path.exists(path):
@@ -86,7 +92,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
         self.node_select_callback = None
-        self.colorblind_mode = False
+        self.colorblind_mode: bool = False
 
         # Viewport Transformations (Zoom & Pan)
         self.zoom_factor: float = 1.0
@@ -109,34 +115,32 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.bind("<Button-3>", self._start_pan)
         self.bind("<B3-Motion>", self._on_pan_drag)
 
-        # Zoom Binds (Mouse Wheel Across Platforms)
-        self.bind("<MouseWheel>", self._on_zoom)  # Windows / macOS
-        self.bind("<Button-4>", self._on_zoom)     # Linux scroll up
-        self.bind("<Button-5>", self._on_zoom)     # Linux scroll down
+        # Zoom Binds
+        self.bind("<MouseWheel>", self._on_zoom)
+        self.bind("<Button-4>", self._on_zoom)
+        self.bind("<Button-5>", self._on_zoom)
 
         self.sprite_manager = AssetManager()
+
+    def set_colorblind_mode(self, enabled: bool):
+        """Toggles colorblind-friendly rendering palette on canvas."""
+        self.colorblind_mode = bool(enabled)
+        self.render()
 
     def set_node_select_callback(self, callback):
         """Registers a callback function invoked when a node is selected in SELECT mode."""
         self.node_select_callback = callback
-
-
-    def set_colorblind_mode(self, enabled: bool):
-        self.colorblind_mode = enabled
-        self.render()
 
     # ------------------------------------------------------------------
     # Viewport Coordinate Mapping
     # ------------------------------------------------------------------
 
     def world_to_screen(self, wx: float, wy: float) -> Tuple[float, float]:
-        """Converts graph world coordinates to canvas screen coordinates."""
         sx = (wx * self.zoom_factor) + self.pan_offset_x
         sy = (wy * self.zoom_factor) + self.pan_offset_y
         return sx, sy
 
     def screen_to_world(self, sx: float, sy: float) -> Tuple[float, float]:
-        """Converts canvas screen coordinates to graph world coordinates."""
         wx = (sx - self.pan_offset_x) / self.zoom_factor
         wy = (sy - self.pan_offset_y) / self.zoom_factor
         return wx, wy
@@ -146,7 +150,6 @@ class NetworkCanvas(ctk.CTkCanvas):
     # ------------------------------------------------------------------
 
     def _on_zoom(self, event):
-        """Zoom in / out centered around the cursor position."""
         if event.num == 4 or event.delta > 0:
             zoom_scale = 1.15
         elif event.num == 5 or event.delta < 0:
@@ -168,12 +171,10 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def _start_pan(self, event):
-        """Records initial right-click anchor for panning."""
         self._pan_start_x = event.x - self.pan_offset_x
         self._pan_start_y = event.y - self.pan_offset_y
 
     def _on_pan_drag(self, event):
-        """Updates offset when dragging with right-click."""
         self.pan_offset_x = event.x - self._pan_start_x
         self.pan_offset_y = event.y - self._pan_start_y
         self.render()
@@ -224,8 +225,10 @@ class NetworkCanvas(ctk.CTkCanvas):
             if is_update:
                 edge = self.graph.edges[edge_idx]
                 if user_pwd.strip():
-                    edge.password = user_pwd.strip().upper()[:6]
+                    edge.password = user_pwd.strip()[:6]
                 edge.crack_progress = 0.0
+                edge.crack_attempts = 0
+                edge.required_attempts = calculate_password_search_space(edge.password)
             else:
                 self.graph.toggle_firewall_at_index(edge_idx, custom_pwd=user_pwd)
             self.render()
@@ -332,6 +335,7 @@ class NetworkCanvas(ctk.CTkCanvas):
             return
 
         zf = self.zoom_factor
+        edge_palette = EDGE_COLORS_CB if self.colorblind_mode else EDGE_COLORS_STD
 
         # 1. Render Edges & Firewall Security Barriers
         for index, edge in enumerate(self.graph.edges):
@@ -358,9 +362,15 @@ class NetworkCanvas(ctk.CTkCanvas):
 
                     mid_sx, mid_sy = (s1_x + s2_x) / 2, (s1_y + s2_y) / 2
                     pwd = getattr(edge, "password", "LOCK")
+                    attempts = getattr(edge, "crack_attempts", 0)
+                    req_attempts = getattr(edge, "required_attempts", 10000)
 
-                    badge_w = int(30 * min(1.5, max(0.7, zf)))
-                    badge_h = int(14 * min(1.5, max(0.7, zf)))
+                    remaining = max(0, req_attempts - attempts)
+                    eta_ticks = int(remaining / 250) if remaining > 0 else 0
+                    eta_text = f"ETA {eta_ticks}s" if eta_ticks > 0 else "BREACH"
+
+                    badge_w = int(40 * min(1.5, max(0.7, zf)))
+                    badge_h = int(18 * min(1.5, max(0.7, zf)))
 
                     self.create_rectangle(
                         mid_sx - badge_w,
@@ -372,13 +382,13 @@ class NetworkCanvas(ctk.CTkCanvas):
                         width=2,
                     )
 
-                    label_text = f"🔑{pwd}\n{int(progress * 100)}%"
+                    label_text = f"🔑{pwd}\n{int(progress * 100)}%\n[{attempts:,} Tries]\n{eta_text}"
                     self.create_text(
                         mid_sx - (badge_w // 3),
                         mid_sy,
                         text=label_text,
                         fill="#00E5FF",
-                        font=("Consolas", max(6, int(7 * zf)), "bold"),
+                        font=("Consolas", max(5, int(6 * zf)), "bold"),
                         justify="center",
                     )
 
@@ -404,7 +414,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                         font=("Arial", max(7, int(9 * zf))),
                     )
                 else:
-                    edge_color = EDGE_COLORS.get(edge.status, "#444444")
+                    edge_color = edge_palette.get(edge.status, "#444444")
                     edge_width = max(1, int((2 if edge.status != "HEALTHY" else 1) * zf))
                     self.create_line(
                         s1_x, s1_y, s2_x, s2_y, fill=edge_color, width=edge_width
@@ -435,33 +445,14 @@ class NetworkCanvas(ctk.CTkCanvas):
             )
             radius = int((type_cfg.radius if type_cfg else 14) * zf)
 
-            node_colors = (
-                COLORBLIND_STATUS_COLORS
-                if self.colorblind_mode
-                else STATUS_COLORS
-            )
-
-            status_color = node_colors.get(
-                node.status,
-                "#888888"
-            )
-
-            self.create_oval(
-                sx - radius - 5,
-                sy - radius - 5,
-                sx + radius + 5,
-                sy + radius + 5,
-                outline=status_color,
-                width=3,
-            )
-
             if node.is_patient_zero:
+                p0_color = "#D55E00" if self.colorblind_mode else "#ff3b3b"
                 self.create_oval(
                     sx - int(32 * zf),
                     sy - int(32 * zf),
                     sx + int(32 * zf),
                     sy + int(32 * zf),
-                    fill="#ff3b3b",
+                    fill=p0_color,
                     outline="",
                     stipple="gray50",
                 )
@@ -536,11 +527,9 @@ class CanvasView(ctk.CTkFrame):
         super().__init__(parent)
         self.simulation = simulation
 
-        # Embed the NetworkCanvas inside this view frame
         self.canvas = NetworkCanvas(self)
         self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Export button placed at the bottom of the view
         self.export_button = ctk.CTkButton(
             self, 
             text="Export Simulation Report", 
@@ -549,7 +538,6 @@ class CanvasView(ctk.CTkFrame):
         self.export_button.pack(pady=10)
 
     def trigger_export(self):
-        """Calls the exporter and displays a popup modal with the report summary."""
         try:
             graph = getattr(self.simulation, "graph", None) or getattr(self.canvas, "graph", None)
             if not graph:
@@ -558,11 +546,9 @@ class CanvasView(ctk.CTkFrame):
             
             filepath = export_simulation_summary(graph)
             
-            # Read back the exported JSON to show in the popup preview
             with open(filepath, "r") as f:
                 report_data = json.load(f)
             
-            # Create a modal popup window (CTkToplevel)
             popup = ctk.CTkToplevel(self)
             popup.title("Simulation Report Exported")
             popup.geometry("480x380")
@@ -583,7 +569,6 @@ class CanvasView(ctk.CTkFrame):
                 text_color="gray"
             ).pack(pady=5)
 
-            # Text box showing JSON summary preview
             textbox = ctk.CTkTextbox(popup, width=430, height=220)
             textbox.pack(padx=10, pady=10)
             textbox.insert("1.0", json.dumps(report_data, indent=2))
@@ -598,7 +583,7 @@ class CanvasView(ctk.CTkFrame):
         except Exception as e:
             print(f"Export failed: {e}")
 
-            # Delegated methods required by app.py:
+    # Delegated methods required by app.py:
     def render(self):
         self.canvas.render()
 
@@ -614,5 +599,6 @@ class CanvasView(ctk.CTkFrame):
     def set_node_select_callback(self, callback):
         self.canvas.set_node_select_callback(callback)
 
-    def set_colorblind_mode(self, enabled):
+    def set_colorblind_mode(self, enabled: bool):
+        """Delegates colorblind mode setting to inner canvas."""
         self.canvas.set_colorblind_mode(enabled)

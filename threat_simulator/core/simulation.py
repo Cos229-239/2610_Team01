@@ -67,7 +67,6 @@ class SimulationEngine:
             nodes=deepcopy(graph.nodes),
             edges=deepcopy(graph.edges),
         )
-        # If user had stepped back, discard any "future" history
         if self.history_index < len(self.history) - 1:
             self.history = self.history[: self.history_index + 1]
         self.history.append(snap)
@@ -135,10 +134,7 @@ class SimulationEngine:
             self._record_snapshot(graph, telemetry)
             return telemetry
 
-        # -------------------------------------------------------------
-        # ESCALATION CALCULATION: Threat grows stronger over time
-        # Increases by +5% per tick, capping at 2.5x base power
-        # -------------------------------------------------------------
+        # Escalation calculation
         escalation_factor = 1.0 + min(1.5, self.step_counter * 0.05)
         effective_inf_rate = min(1.0, inf_rate * escalation_factor)
 
@@ -153,24 +149,30 @@ class SimulationEngine:
             if getattr(edge, "is_firewall", False):
                 u_inf = graph.nodes[edge.u].status == "INFECTED"
                 v_inf = graph.nodes[edge.v].status == "INFECTED"
-                # If an infected node borders this firewall barrier, apply cracking pressure
+                
+                # Apply brute-force pressure if bordering an infected node
                 if u_inf or v_inf:
-                    # Crack speed scales with current infection rate and escalation multiplier
-                    crack_speed = (effective_inf_rate * 0.15) * escalation_factor
-                    edge.crack_progress = min(
-                        1.0, getattr(edge, "crack_progress", 0.0) + crack_speed
-                    )
-                    # When cracking hits 100%, breach and disarm the firewall barrier
+                    # Guesses per tick scaled by infection rate & escalation factor
+                    base_tries_per_step = 250
+                    tries = int(base_tries_per_step * effective_inf_rate * escalation_factor)
+                    
+                    edge.crack_attempts = getattr(edge, "crack_attempts", 0) + tries
+                    req_attempts = getattr(edge, "required_attempts", 10_000)
+                    
+                    # Update progress percentage relative to total required combinations
+                    edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
+
+                    # Breach and disarm firewall upon reaching 100%
                     if edge.crack_progress >= 1.0:
                         edge.is_firewall = False
                         edge.crack_progress = 0.0
+                        edge.crack_attempts = 0
                         edge.password = ""
                         edge.status = "INFECTED"
 
         # 1. Build Adjacency Map (Excludes Intact Active Firewalls)
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         for edge in graph.edges:
-            # Skip edge if firewall is active and unbroken
             if getattr(edge, "is_firewall", False):
                 continue
             if edge.u < total_nodes and edge.v < total_nodes:
@@ -189,7 +191,7 @@ class SimulationEngine:
             currently_infected.add(p0_idx)
 
         # -------------------------------------------------------------
-        # PHASE A: INFECTION SPREAD (WITH ESCALATED POWER)
+        # PHASE A: INFECTION SPREAD
         # -------------------------------------------------------------
         attack_candidates: Dict[int, int] = {}
         for inf_idx in currently_infected:
@@ -315,7 +317,6 @@ class SimulationEngine:
                     node.status = "HEALTHY"
 
         for edge in graph.edges:
-            # Highlight firewall edges as warning when actively being cracked
             if getattr(edge, "is_firewall", False) and getattr(
                 edge, "crack_progress", 0.0
             ) > 0.0:
@@ -354,7 +355,5 @@ class SimulationEngine:
             sim_time_seconds=self.step_counter,
         )
 
-        # Record snapshot AFTER all state updates
         self._record_snapshot(graph, telemetry)
-
         return telemetry
