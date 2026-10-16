@@ -86,15 +86,19 @@ class SimulatorApp(ctk.CTk):
         # Left Column Frame
         left_frame = ctk.CTkFrame(self)
         left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-        left_frame.grid_rowconfigure(2, weight=1)
+        left_frame.grid_rowconfigure(2, weight=1)      # canvas row expands
         left_frame.grid_columnconfigure(0, weight=1)
 
-        # Controls Header
+        # ------------------------------------------------------------------
+        # Top control bar – now two rows so it never clips
+        # ------------------------------------------------------------------
         top_ctrl = ctk.CTkFrame(left_frame)
-        top_ctrl.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        top_ctrl.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+        top_ctrl.grid_columnconfigure(1, weight=1)     # scenario menu can stretch a little
 
+        # Row 0 – Scenario + Mode selector
         ctk.CTkLabel(top_ctrl, text="Scenario:", font=("Arial", 12, "bold")).grid(
-            row=0, column=0, padx=5, pady=5
+            row=0, column=0, padx=5, pady=5, sticky="w"
         )
         self.level_menu = ctk.CTkOptionMenu(
             top_ctrl,
@@ -105,26 +109,22 @@ class SimulatorApp(ctk.CTk):
                 "Custom Canvas",
             ],
             command=self._on_level_change,
+            width=180,
         )
-        self.level_menu.grid(row=0, column=1, padx=5, pady=5)
+        self.level_menu.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ToolTip(self.level_menu, "Select a predefined network topology or start with a blank canvas.")
 
-        ToolTip(
-            self.level_menu,
-            "Select a predefined network topology or start with a blank canvas."
-        )
-
-        # Segmented Button for Canvas Editing Mode (Includes Firewall)
         self.mode_selector = ctk.CTkSegmentedButton(
             top_ctrl,
             values=["Move", "+ Node", "+ Edge", "Infect", "Firewall"],
             command=self._on_mode_change,
         )
         self.mode_selector.set("Move")
-        self.mode_selector.grid(row=0, column=2, padx=10, pady=5)
+        self.mode_selector.grid(row=0, column=2, columnspan=3, padx=10, pady=5, sticky="ew")
 
-        # Device Selection Menu for Node Placement
+        # Row 1 – Device / AI / Clear / Settings
         ctk.CTkLabel(top_ctrl, text="Device:", font=("Arial", 11)).grid(
-            row=0, column=3, padx=(10, 2), pady=5
+            row=1, column=0, padx=5, pady=5, sticky="w"
         )
         self.device_menu = ctk.CTkOptionMenu(
             top_ctrl,
@@ -132,149 +132,90 @@ class SimulatorApp(ctk.CTk):
             width=90,
             command=self._on_device_type_change,
         )
-        self.device_menu.grid(row=0, column=4, padx=5, pady=5)
+        self.device_menu.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ToolTip(self.device_menu, "Choose what device type will be placed when adding nodes.")
 
-        ToolTip(
-            self.device_menu,
-            "Choose what device type will be placed when adding nodes."
-        )
-
-        # Spread AI Strategy Selector
         ctk.CTkLabel(top_ctrl, text="AI Mode:", font=("Arial", 11)).grid(
-            row=0, column=5, padx=(10, 2), pady=5
+            row=1, column=2, padx=(15, 2), pady=5, sticky="e"
         )
         self.ai_mode_menu = ctk.CTkOptionMenu(
             top_ctrl,
             values=["Strategic AI", "Uniform"],
             width=110,
         )
-        self.ai_mode_menu.grid(row=0, column=6, padx=5, pady=5)
-
-        ToolTip(
-            self.ai_mode_menu,
-            "Strategic AI targets the most effective paths. Uniform AI spreads randomly."
-        )
+        self.ai_mode_menu.grid(row=1, column=3, padx=5, pady=5, sticky="w")
+        ToolTip(self.ai_mode_menu, "Strategic AI targets the most effective paths. Uniform AI spreads randomly.")
 
         ctk.CTkButton(
-            top_ctrl,
-            text="Clear",
-            width=60,
-            fg_color="#C62828",
-            command=self._clear_canvas,
-        ).grid(row=0, column=7, padx=5, pady=5)
+            top_ctrl, text="Clear", width=60, fg_color="#C62828", command=self._clear_canvas
+        ).grid(row=1, column=4, padx=5, pady=5)
 
         ctk.CTkButton(
-            top_ctrl,
-            text="Settings",
-            width=80,
-            command=self.open_settings
-        ).grid(row=0, column=8, padx=5, pady=5)
+            top_ctrl, text="Settings", width=80, command=self.open_settings
+        ).grid(row=1, column=5, padx=5, pady=5)
 
+        # ------------------------------------------------------------------
         # Sliders
+        # ------------------------------------------------------------------
         slider_frame = ctk.CTkFrame(left_frame)
         slider_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
+        slider_frame.grid_columnconfigure((1, 3), weight=1)
 
-        ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(
-            row=0, column=0, padx=5, pady=5
-        )
-
-        self.inf_value_label = ctk.CTkLabel(slider_frame, text="0.3")
-        self.inf_value_label.grid(row=1, column=0, padx=5)
-
+        ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(row=0, column=0, padx=5, pady=5)
+        self.inf_value_label = ctk.CTkLabel(slider_frame, text="0.3", width=30)
+        self.inf_value_label.grid(row=0, column=1, padx=5, sticky="w")
         self.slider_inf = ctk.CTkSlider(
-            slider_frame,
-            from_=0.1,
-            to=1.0,
-            number_of_steps=9,
+            slider_frame, from_=0.1, to=1.0, number_of_steps=9,
             command=lambda v: self.inf_value_label.configure(text=f"{v:.1f}"),
         )
         self.slider_inf.set(0.3)
-        self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
+        self.slider_inf.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        ToolTip(self.slider_inf, "Controls how likely an infected node is to spread the outbreak.")
 
-        ToolTip(
-            self.slider_inf,
-            "Controls how likely an infected node is to spread the outbreak."
-        )
-
-        ctk.CTkLabel(slider_frame, text="Defense Power:").grid(
-            row=0, column=2, padx=5, pady=5
-        )
-
-        self.def_value_label = ctk.CTkLabel(slider_frame, text="0.5")
-        self.def_value_label.grid(row=1, column=2, padx=5)
-
+        ctk.CTkLabel(slider_frame, text="Defense Power:").grid(row=0, column=3, padx=5, pady=5)
+        self.def_value_label = ctk.CTkLabel(slider_frame, text="0.5", width=30)
+        self.def_value_label.grid(row=0, column=4, padx=5, sticky="w")
         self.slider_def = ctk.CTkSlider(
-            slider_frame,
-            from_=0.1,
-            to=1.0,
-            number_of_steps=9,
+            slider_frame, from_=0.1, to=1.0, number_of_steps=9,
             command=lambda v: self.def_value_label.configure(text=f"{v:.1f}"),
         )
         self.slider_def.set(0.5)
-        self.slider_def.grid(row=0, column=3, padx=5, pady=5)
+        self.slider_def.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
+        ToolTip(self.slider_def, "Increase the network's ability to resist infection.")
 
-        ToolTip(
-            self.slider_def,
-            "Increase the network's ability to resist infection."
-        )
-
-        # Canvas & export button view wrapper
-
-        
+        # ------------------------------------------------------------------
+        # Canvas (expands to fill remaining space)
+        # ------------------------------------------------------------------
         self.net_canvas = CanvasView(left_frame, self.sim_engine)
+        self.net_canvas.set_node_select_callback(self.on_node_selected)
+        self.net_canvas.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
 
-        self.net_canvas.set_node_select_callback(
-            self.on_node_selected
-        )
-
-        self.net_canvas.grid(
-            row=2,
-            column=0,
-            padx=10,
-            pady=10,
-            sticky="nsew"
-        )
-
-        # Buttons (Play/Pause/Reset)
+        # ------------------------------------------------------------------
+        # Play / Pause / Reset
+        # ------------------------------------------------------------------
         btn_frame = ctk.CTkFrame(left_frame)
         btn_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
         btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        ctk.CTkButton(
-            btn_frame, text="Play", fg_color="green", command=self.play_sim
-        ).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-
         self.play_button = ctk.CTkButton(
-            btn_frame,
-            text="Play",
-            fg_color="green",
-            command=self.play_sim
+            btn_frame, text="Play", fg_color="green", command=self.play_sim
         )
-
-        self.play_button.grid(
-            row=0,
-            column=0,
-            padx=5,
-            pady=5,
-            sticky="ew"
-        )
-
-        ToolTip(
-            self.play_button,
-            "Start the simulation."
-        )
+        self.play_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        ToolTip(self.play_button, "Start the simulation.")
 
         ctk.CTkButton(
             btn_frame, text="Pause", fg_color="red", command=self.pause_sim
         ).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
         ctk.CTkButton(
             btn_frame, text="Reset", command=self.reset_sim
         ).grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
-        # Telemetry Panel
+        # ------------------------------------------------------------------
+        # Telemetry Panel (right side)
+        # ------------------------------------------------------------------
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-
     def on_node_selected(self, node_index: int):
 
             if 0 <= node_index < len(self.graph.nodes):
