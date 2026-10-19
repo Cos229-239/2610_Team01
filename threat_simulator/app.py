@@ -4,6 +4,7 @@ from core.simulation import SimulationEngine
 from ui.canvas_view import CanvasView
 from ui.telemetry_view import TelemetryPanel
 from ui.tooltip import ToolTip
+from ui.assistant import ClippyAssistant
 
 
 class SimulatorApp(ctk.CTk):
@@ -21,9 +22,22 @@ class SimulatorApp(ctk.CTk):
         }
 
         self._build_ui()
+        
+        # Initialize Desktop Interactive Assistant (Clippy-style)
+        self.assistant = ClippyAssistant(self)
+        
         self._on_level_change("Level 1: Ring Topology")
 
-        
+    # ------------------------------------------------------------------
+    # Assistant Toggle
+    # ------------------------------------------------------------------
+
+    def toggle_assistant(self):
+        """Toggles the floating desktop helper assistant."""
+        if self.assistant.winfo_viewable():
+            self.assistant.hide()
+        else:
+            self.assistant.show()
 
     # ------------------------------------------------------------------
     # Event Callbacks
@@ -166,9 +180,25 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkButton(
             top_ctrl,
             text="Settings",
-            width=80,
+            width=70,
             command=self.open_settings
         ).grid(row=0, column=8, padx=5, pady=5)
+
+        # --- Interactive Assistant Toggle Button ---
+        self.btn_assistant = ctk.CTkButton(
+            top_ctrl,
+            text="📎 Help",
+            width=65,
+            fg_color="#1E88E5",
+            hover_color="#1565C0",
+            command=self.toggle_assistant
+        )
+        self.btn_assistant.grid(row=0, column=9, padx=5, pady=5)
+
+        ToolTip(
+            self.btn_assistant,
+            "Open the interactive desktop assistant for guided instructions."
+        )
 
         # Sliders
         slider_frame = ctk.CTkFrame(left_frame)
@@ -218,9 +248,7 @@ class SimulatorApp(ctk.CTk):
             "Increase the network's ability to resist infection."
         )
 
-        # Canvas & export button view wrapper
-
-        
+        # Canvas View Wrapper
         self.net_canvas = CanvasView(left_frame, self.sim_engine)
 
         self.net_canvas.set_node_select_callback(
@@ -239,10 +267,6 @@ class SimulatorApp(ctk.CTk):
         btn_frame = ctk.CTkFrame(left_frame)
         btn_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
         btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
-
-        ctk.CTkButton(
-            btn_frame, text="Play", fg_color="green", command=self.play_sim
-        ).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
         self.play_button = ctk.CTkButton(
             btn_frame,
@@ -267,6 +291,7 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkButton(
             btn_frame, text="Pause", fg_color="red", command=self.pause_sim
         ).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        
         ctk.CTkButton(
             btn_frame, text="Reset", command=self.reset_sim
         ).grid(row=0, column=2, padx=5, pady=5, sticky="ew")
@@ -276,22 +301,18 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
     def on_node_selected(self, node_index: int):
-
-            if 0 <= node_index < len(self.graph.nodes):
-
-                node = self.graph.nodes[node_index]
-
-                self.telemetry_panel.show_node_info(
-                    node,
-                    self.graph
-                )
+        if 0 <= node_index < len(self.graph.nodes):
+            node = self.graph.nodes[node_index]
+            self.telemetry_panel.show_node_info(
+                node,
+                self.graph
+            )
 
     # ------------------------------------------------------------------
     # Simulation Loop Controls
     # ------------------------------------------------------------------
     
     def open_settings(self):
-
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
         settings_window.geometry("300x200")
@@ -313,8 +334,6 @@ class SimulatorApp(ctk.CTk):
         self.settings["colorblind_mode"] = enabled
         self.net_canvas.set_colorblind_mode(enabled)
 
-
-    
     def play_sim(self):
         if not self.is_running:
             self.is_running = True
@@ -453,8 +472,6 @@ class SimulatorApp(ctk.CTk):
             command=dialog.destroy,
         ).pack(pady=(15, 10))
 
-
-    
 
 if __name__ == "__main__":
     app = SimulatorApp()
