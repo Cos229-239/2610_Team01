@@ -20,7 +20,8 @@ class SimulatorApp(ctk.CTk):
         self.is_running = False
         self.loop_job = None
         self.settings = {
-            "colorblind_mode": False
+            "colorblind_mode": False,
+            "dark_mode": False
         }
 
         self._build_ui()
@@ -317,20 +318,33 @@ class SimulatorApp(ctk.CTk):
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
-        settings_window.geometry("300x200")
+        settings_window.geometry("320x220")
+        settings_window.resizable(False, False)
 
-        colorblind_var = ctk.BooleanVar(
-            value=self.settings["colorblind_mode"]
-        )
+        # Force the window to appear on top
+        settings_window.transient(self)
+        settings_window.grab_set()
+        settings_window.focus_force()
+        settings_window.lift()
+        settings_window.after(10, settings_window.lift)
 
+        # ----- Colorblind Mode -----
+        colorblind_var = ctk.BooleanVar(value=self.settings["colorblind_mode"])
         ctk.CTkCheckBox(
             settings_window,
             text="Colorblind Mode",
             variable=colorblind_var,
-            command=lambda: self.toggle_colorblind(
-                colorblind_var.get()
-            )
-        ).pack(padx=20, pady=20, anchor="w")
+            command=lambda: self.toggle_colorblind(colorblind_var.get())
+        ).pack(padx=20, pady=(25, 10), anchor="w")
+
+        # ----- Dark Mode -----
+        dark_var = ctk.BooleanVar(value=self.settings["dark_mode"])
+        ctk.CTkCheckBox(
+            settings_window,
+            text="Dark Mode",
+            variable=dark_var,
+            command=lambda: self.toggle_dark_mode(dark_var.get())
+        ).pack(padx=20, pady=10, anchor="w")
 
     def _build_menu(self):
         menubar = Menu(self)
@@ -399,6 +413,13 @@ class SimulatorApp(ctk.CTk):
     def toggle_colorblind(self, enabled: bool):
         self.settings["colorblind_mode"] = enabled
         self.net_canvas.set_colorblind_mode(enabled)
+
+    def toggle_dark_mode(self, enabled: bool):
+        self.settings["dark_mode"] = enabled
+        if enabled:
+            ctk.set_appearance_mode("Dark")
+        else:
+            ctk.set_appearance_mode("Light")
 
     def play_sim(self):
         if not self.is_running:
