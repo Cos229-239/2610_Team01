@@ -1,3 +1,10 @@
+"""
+ui/assistant.py
+----------------
+Animated Desktop Helper Overlay (Clippy-style) for CustomTkinter.
+Provides interactive guided tours, contextual tips, and system help.
+"""
+
 import math
 import customtkinter as ctk
 
@@ -12,12 +19,12 @@ HELP_TOPICS = [
         "Click any node to toggle 'Patient Zero'. This is where infections originate during simulation!",
     ),
     (
-      "+Node",
-      "Click the drop down to select the node type, and click on canvas to place the node"
+        "+Node",
+        "Click the drop down to select the node type, and click on canvas to place the node.",
     ),
     (
-      "+Edge",
-      "Click on one node, then another to connect them via an edge line."
+        "+Edge",
+        "Click on one node, then another to connect them via an edge line.",
     ),
     (
         "🛡️ Active Firewalls",
@@ -163,7 +170,9 @@ class ClippyAssistant(ctk.CTkToplevel):
         if self.winfo_exists() and self.winfo_viewable():
             self.anim_phase += 0.2
             offset = int(math.sin(self.anim_phase) * 3)
-            self.avatar_label.pack_configure(pady=(offset, -offset))
+            top_pad = max(0, 4 + offset)
+            bottom_pad = max(0, 4 - offset)
+            self.avatar_label.pack_configure(pady=(top_pad, bottom_pad))
             self.after(80, self._animate_idle)
 
     def show(self):
