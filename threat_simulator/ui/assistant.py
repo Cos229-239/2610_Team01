@@ -1,10 +1,3 @@
-"""
-ui/assistant.py
-----------------
-Animated Desktop Helper Overlay (Clippy-style) for CustomTkinter.
-Provides interactive guided tours, contextual tips, and system help.
-"""
-
 import math
 import customtkinter as ctk
 
@@ -53,6 +46,11 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.topic_index = 0
         self.anim_phase = 0.0
 
+        # Tracking variables for custom drag positioning
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+        self.is_custom_positioned = False
+
         # Borderless, always-on-top overlay setup
         self.overrideredirect(True)
         self.attributes("-topmost", True)
@@ -67,14 +65,21 @@ class ClippyAssistant(ctk.CTkToplevel):
             corner_radius=12,
             border_width=2,
             border_color="#3B82F6",
+            cursor="fleur",
         )
         self.container.pack(fill="both", expand=True, padx=2, pady=2)
+
+        # Bind mouse drag handlers to move the window
+        self.container.bind("<Button-1>", self._start_drag)
+        self.container.bind("<B1-Motion>", self._on_drag)
 
         # Speech Bubble
         self.bubble_frame = ctk.CTkFrame(
             self.container, fg_color=("gray85", "gray25"), corner_radius=10
         )
         self.bubble_frame.pack(fill="both", expand=True, padx=10, pady=(10, 5))
+        self.bubble_frame.bind("<Button-1>", self._start_drag)
+        self.bubble_frame.bind("<B1-Motion>", self._on_drag)
 
         self.title_label = ctk.CTkLabel(
             self.bubble_frame,
@@ -84,6 +89,8 @@ class ClippyAssistant(ctk.CTkToplevel):
             anchor="w",
         )
         self.title_label.pack(fill="x", padx=10, pady=(8, 2))
+        self.title_label.bind("<Button-1>", self._start_drag)
+        self.title_label.bind("<B1-Motion>", self._on_drag)
 
         self.body_label = ctk.CTkLabel(
             self.bubble_frame,
@@ -93,6 +100,8 @@ class ClippyAssistant(ctk.CTkToplevel):
             justify="left",
         )
         self.body_label.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self.body_label.bind("<Button-1>", self._start_drag)
+        self.body_label.bind("<B1-Motion>", self._on_drag)
 
         # Avatar & Controls Row
         self.bottom_row = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -103,6 +112,8 @@ class ClippyAssistant(ctk.CTkToplevel):
             self.bottom_row, text="📎", font=("Arial", 28)
         )
         self.avatar_label.pack(side="left", padx=(5, 10))
+        self.avatar_label.bind("<Button-1>", self._start_drag)
+        self.avatar_label.bind("<B1-Motion>", self._on_drag)
 
         # Action Buttons
         self.btn_next = ctk.CTkButton(
@@ -126,13 +137,25 @@ class ClippyAssistant(ctk.CTkToplevel):
         )
         self.btn_close.pack(side="right", padx=2)
 
-        # Display initial tip and stick to parent position
+        # Display initial tip and position
         self.show_tip(0)
         self.reposition()
         self.parent.bind("<Configure>", lambda e: self.reposition())
 
         # Start idle floating bounce animation
         self._animate_idle()
+
+    def _start_drag(self, event):
+        """Records initial click offsets for window dragging."""
+        self._drag_start_x = event.x_root - self.winfo_x()
+        self._drag_start_y = event.y_root - self.winfo_y()
+        self.is_custom_positioned = True
+
+    def _on_drag(self, event):
+        """Updates window coordinates as mouse drags."""
+        new_x = event.x_root - self._drag_start_x
+        new_y = event.y_root - self._drag_start_y
+        self.geometry(f"+{new_x}+{new_y}")
 
     def show_tip(self, index: int):
         """Displays a specific help topic from the topics list."""
@@ -146,8 +169,8 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.show_tip(self.topic_index + 1)
 
     def reposition(self):
-        """Snaps the overlay assistant near the bottom-right corner of the parent app, clamped securely within bounds."""
-        if not self.winfo_exists():
+        """Snaps window near bottom-right corner unless manually dragged by user."""
+        if not self.winfo_exists() or self.is_custom_positioned:
             return
         try:
             px = self.parent.winfo_x()
@@ -157,12 +180,10 @@ class ClippyAssistant(ctk.CTkToplevel):
 
             width = 260
             height = 160
-            
-            # Target bottom-right position relative to parent with padding
+
             target_x = px + pw - width - 20
             target_y = py + ph - height - 20
-            
-            # Clamp coordinates so Clippy never overflows or gets cut off on resize/maximize
+
             x = max(px + 10, min(target_x, px + pw - width - 10))
             y = max(py + 10, min(target_y, py + ph - height - 10))
 
