@@ -146,7 +146,7 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.show_tip(self.topic_index + 1)
 
     def reposition(self):
-        """Snaps the overlay assistant near the bottom-right corner of the parent app."""
+        """Snaps the overlay assistant near the bottom-right corner of the parent app, clamped securely within bounds."""
         if not self.winfo_exists():
             return
         try:
@@ -155,13 +155,18 @@ class ClippyAssistant(ctk.CTkToplevel):
             pw = self.parent.winfo_width()
             ph = self.parent.winfo_height()
 
-            # Place 260x160 window inside bottom-right corner with padding
             width = 260
             height = 160
-            x = px + pw - width - 25
-            y = py + ph - height - 25
+            
+            # Target bottom-right position relative to parent with padding
+            target_x = px + pw - width - 20
+            target_y = py + ph - height - 20
+            
+            # Clamp coordinates so Clippy never overflows or gets cut off on resize/maximize
+            x = max(px + 10, min(target_x, px + pw - width - 10))
+            y = max(py + 10, min(target_y, py + ph - height - 10))
 
-            self.geometry(f"{width}x{height}+{max(0, x)}+{max(0, y)}")
+            self.geometry(f"{width}x{height}+{max(0, int(x))}+{max(0, int(y))}")
         except Exception:
             pass
 
