@@ -1,0 +1,109 @@
+{
+    "timestamp": "2026-10-22 21:42:17",
+    "total_nodes": 20,
+    "infected_nodes": 14,
+    "healthy_nodes": 6,
+    "containment_successful": false,
+    "nodes": [
+        {
+            "id": "PC-01",
+            "status": "WARNING",
+            "is_patient_zero": true
+        },
+        {
+            "id": "PC-02",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-03",
+            "status": "WARNING",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-04",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-05",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-06",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-07",
+            "status": "WARNING",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-08",
+            "status": "WARNING",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-09",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-10",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-11",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-12",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-13",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-14",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-15",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-16",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-17",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-18",
+            "status": "WARNING",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-19",
+            "status": "INFECTED",
+            "is_patient_zero": false
+        },
+        {
+            "id": "PC-20",
+            "status": "WARNING",
+            "is_patient_zero": false
+        }
+    ]
+}

@@ -5,6 +5,8 @@ from ui.canvas_view import CanvasView
 from ui.telemetry_view import TelemetryPanel
 from ui.tooltip import ToolTip
 from ui.assistant import ClippyAssistant
+import tkinter as tk
+from tkinter import Menu
 
 
 class SimulatorApp(ctk.CTk):
@@ -18,10 +20,12 @@ class SimulatorApp(ctk.CTk):
         self.is_running = False
         self.loop_job = None
         self.settings = {
-            "colorblind_mode": False
+            "colorblind_mode": False,
+            "dark_mode": False
         }
 
         self._build_ui()
+        self._build_menu()
         
         # Initialize Desktop Interactive Assistant (Clippy-style)
         self.assistant = ClippyAssistant(self)
@@ -300,6 +304,70 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+    def _build_menu(self):
+        menubar = Menu(self)
+        self.config(menu=menubar)
+
+        # File
+        file_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Clear Canvas", command=self._clear_canvas)
+        file_menu.add_separator()
+        file_menu.add_command(label="Export Simulation Report", command=self.net_canvas.trigger_export)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.destroy)
+
+        # Edit
+        edit_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+        edit_menu.add_command(label="Settings…", command=self.open_settings)
+
+        # View
+        view_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+
+        self.colorblind_var = tk.BooleanVar(value=self.settings["colorblind_mode"])
+        view_menu.add_checkbutton(
+            label="Colorblind Mode",
+            variable=self.colorblind_var,
+            command=lambda: self.toggle_colorblind(self.colorblind_var.get())
+        )
+
+        # Simulation
+        sim_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Simulation", menu=sim_menu)
+        sim_menu.add_command(label="Play", command=self.play_sim)
+        sim_menu.add_command(label="Pause", command=self.pause_sim)
+        sim_menu.add_command(label="Reset", command=self.reset_sim)
+
+        # Help
+        help_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self._show_about)
+
+    def _show_about(self):
+        about = ctk.CTkToplevel(self)
+        about.title("About")
+        about.geometry("360x180")
+        about.resizable(False, False)
+        about.transient(self)
+        about.grab_set()
+        about.lift()
+
+        ctk.CTkLabel(
+            about,
+            text="Adaptive AI Outbreak & Threat Simulator",
+            font=("Arial", 14, "bold")
+        ).pack(pady=(25, 8))
+
+        ctk.CTkLabel(
+            about,
+            text="A network infection simulation tool\nwith AI-driven spread models.",
+            justify="center"
+        ).pack(pady=5)
+
+        ctk.CTkButton(about, text="Close", width=100, command=about.destroy).pack(pady=15)
+        
     def on_node_selected(self, node_index: int):
         if 0 <= node_index < len(self.graph.nodes):
             node = self.graph.nodes[node_index]
@@ -315,24 +383,44 @@ class SimulatorApp(ctk.CTk):
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
-        settings_window.geometry("300x200")
+        settings_window.geometry("320x220")
+        settings_window.resizable(False, False)
 
-        colorblind_var = ctk.BooleanVar(
-            value=self.settings["colorblind_mode"]
-        )
+        # Force the window to appear on top
+        settings_window.transient(self)
+        settings_window.grab_set()
+        settings_window.focus_force()
+        settings_window.lift()
+        settings_window.after(10, settings_window.lift)
 
+        # ----- Colorblind Mode -----
+        colorblind_var = ctk.BooleanVar(value=self.settings["colorblind_mode"])
         ctk.CTkCheckBox(
             settings_window,
             text="Colorblind Mode",
             variable=colorblind_var,
-            command=lambda: self.toggle_colorblind(
-                colorblind_var.get()
-            )
-        ).pack(padx=20, pady=20, anchor="w")
+            command=lambda: self.toggle_colorblind(colorblind_var.get())
+        ).pack(padx=20, pady=(25, 10), anchor="w")
+
+        # ----- Dark Mode -----
+        dark_var = ctk.BooleanVar(value=self.settings["dark_mode"])
+        ctk.CTkCheckBox(
+            settings_window,
+            text="Dark Mode",
+            variable=dark_var,
+            command=lambda: self.toggle_dark_mode(dark_var.get())
+        ).pack(padx=20, pady=10, anchor="w")
 
     def toggle_colorblind(self, enabled: bool):
         self.settings["colorblind_mode"] = enabled
         self.net_canvas.set_colorblind_mode(enabled)
+
+    def toggle_dark_mode(self, enabled: bool):
+        self.settings["dark_mode"] = enabled
+        if enabled:
+            ctk.set_appearance_mode("Dark")
+        else:
+            ctk.set_appearance_mode("Light")
 
     def play_sim(self):
         if not self.is_running:
