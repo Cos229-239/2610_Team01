@@ -27,8 +27,8 @@ class SimulatorApp(ctk.CTk):
         self._build_ui()
         self._build_menu()
         
-        # Initialize Desktop Interactive Assistant (Clippy-style)
-        self.assistant = ClippyAssistant(self)
+        # Initialize Desktop Interactive Assistant with live simulation context references
+        self.assistant = ClippyAssistant(self, sim_engine=self.sim_engine, graph=self.graph)
         
         self._on_level_change("Level 1: Ring Topology")
 
