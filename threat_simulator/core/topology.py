@@ -47,6 +47,8 @@ class Node:
     y: float = 0.0
     is_patient_zero: bool = False
     infection_step: int = -1
+    ip_address: str = ""       # e.g. "192.168.10.5"
+    subnet: str = "192.168.1.0/24" # the network this node belongs to
 
 
 @dataclass
@@ -66,14 +68,37 @@ class NetworkGraph:
     nodes: List[Node] = field(default_factory=list)
     edges: List[Edge] = field(default_factory=list)
 
+    # Base network for this graph (third octet changes per topology)
+    base_network: str = "192.168.1.0/24"
+    _next_host: int = 1           # next host number to hand out
+
     @property
     def node_count(self) -> int:
         return len(self.nodes)
+
+    def _generate_ip(self) -> str:
+        """Return the next available IP in the current base_network."""
+        # base_network is expected as "A.B.C.0/24"
+        parts = self.base_network.split("/")[0].split(".")
+        if len(parts) != 4:
+            parts = ["192", "168", "1", "0"]
+
+        # Simple sequential assignment (skips .0 and .255)
+        host = self._next_host
+        self._next_host += 1
+        if host >= 254:          # wrap if we somehow exceed a /24
+            host = 1
+            self._next_host = 2
+
+        return f"{parts[0]}.{parts[1]}.{parts[2]}.{host}"
 
     def add_node(self, x: float, y: float, node_type: str = "PC") -> Node:
         """Adds a new node with a specific device type at canvas coordinates."""
         node_id = f"{node_type[:2].upper()}-{len(self.nodes) + 1:02d}"
         is_first = len(self.nodes) == 0
+
+        ip = self._generate_ip()
+
         new_node = Node(
             id=node_id,
             status="HEALTHY",
@@ -81,6 +106,8 @@ class NetworkGraph:
             x=x,
             y=y,
             is_patient_zero=is_first,
+            ip_address=ip,
+            subnet=self.base_network,
         )
         self.nodes.append(new_node)
         return new_node
@@ -186,6 +213,7 @@ class NetworkGraph:
         """Clears all nodes and edges from the graph instance."""
         self.nodes.clear()
         self.edges.clear()
+        self._next_host = 1
 
 
 class TopologyGenerator:
@@ -193,56 +221,57 @@ class TopologyGenerator:
 
     @staticmethod
     def generate_ring(num_nodes: int = 20) -> NetworkGraph:
+        graph = NetworkGraph(base_network="192.168.10.0/24")
         types = ["Router", "Modem", "PC", "PC"]
-        nodes = [
-            Node(id=f"PC-{i+1:02d}", node_type=types[i % len(types)])
-            for i in range(num_nodes)
-        ]
-        if nodes:
-            nodes[0].is_patient_zero = True
 
-        edges = []
         for i in range(num_nodes):
-            edges.append(Edge(u=i, v=(i + 1) % num_nodes))
-            if i % 3 == 0:
-                edges.append(Edge(u=i, v=(i + 5) % num_nodes))
+            node = graph.add_node(0, 0, node_type=types[i % len(types)])
+            node.id = f"PC-{i+1:02d}"
 
-        return NetworkGraph(nodes=nodes, edges=edges)
+        if graph.nodes:
+            graph.nodes[0].is_patient_zero = True
+
+        for i in range(num_nodes):
+            graph.add_edge(i, (i + 1) % num_nodes)
+            if i % 3 == 0:
+                graph.add_edge(i, (i + 5) % num_nodes)
+
+        return graph
 
     @staticmethod
     def generate_mesh(num_nodes: int = 24) -> NetworkGraph:
+        graph = NetworkGraph(base_network="192.168.20.0/24")
         types = ["Router", "PC", "Modem", "PC"]
-        nodes = [
-            Node(id=f"MS-{i+1:02d}", node_type=types[i % len(types)])
-            for i in range(num_nodes)
-        ]
-        if nodes:
-            nodes[0].is_patient_zero = True
+        
+        for i in range(num_nodes):
+            node = graph.add_node(0, 0, node_type=types[i % len(types)])
+            node.id = f"MS-{i+1:02d}"
 
-        edges = []
+        if graph.nodes:
+            graph.nodes[0].is_patient_zero = True
+
         for i in range(num_nodes):
             for j in range(i + 1, num_nodes):
-                edges.append(Edge(u=i, v=j))
+                graph.add_edge(i, j)
 
-        return NetworkGraph(nodes=nodes, edges=edges)
+        return graph
 
     @staticmethod
     def generate_star(num_nodes: int = 18) -> NetworkGraph:
-        nodes = [
-            Node(
-                id=f"ST-{i+1:02d}",
-                node_type="Router" if i == 0 else ("PC" if i % 2 == 0 else "Modem"),
-            )
-            for i in range(num_nodes)
-        ]
-        if nodes:
-            nodes[0].is_patient_zero = True
+        graph = NetworkGraph(base_network="192.168.30.0/24")
 
-        edges = []
+        for i in range(num_nodes):
+            ntype = "Router" if i == 0 else ("PC" if i % 2 == 0 else "Modem")
+            node = graph.add_node(0, 0, node_type=ntype)
+            node.id = f"ST-{i+1:02d}"
+
+        if graph.nodes:
+            graph.nodes[0].is_patient_zero = True
+
         for i in range(1, num_nodes):
-            edges.append(Edge(u=0, v=i))
+            graph.add_edge(0, i)
 
-        return NetworkGraph(nodes=nodes, edges=edges)
+        return graph
 
     @staticmethod
     def apply_ring_layout(graph: NetworkGraph, width: float, height: float):

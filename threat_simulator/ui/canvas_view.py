@@ -515,11 +515,22 @@ class NetworkCanvas(ctk.CTkCanvas):
 
             self.create_text(
                 sx,
-                sy + int(22 * zf),
+                sy + int(20 * zf),
                 text=label,
                 fill=font_color,
                 font=("Courier", font_sz, "bold"),
             )
+
+            # IP address under the node name
+            if getattr(node, "ip_address", ""):
+                ip_font_sz = max(5, int(7 * zf))
+                self.create_text(
+                    sx,
+                    sy + int(32 * zf),
+                    text=node.ip_address,
+                    fill="#444444",
+                    font=("Consolas", ip_font_sz),
+                )
 
 
 class CanvasView(ctk.CTkFrame):
