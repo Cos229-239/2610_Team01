@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from core.topology import TopologyGenerator, NetworkGraph
-from core.simulation import SimulationEngine
+from core.simulation import SimulationEngine, TelemetryData
 from ui.canvas_view import CanvasView
 from ui.telemetry_view import TelemetryPanel
 from ui.tooltip import ToolTip
@@ -13,7 +13,7 @@ class SimulatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Adaptive AI Outbreak & Threat Simulator")
-        self.geometry("1100x700")
+        self.geometry("1150x700")
 
         self.sim_engine = SimulationEngine()
         self.graph = NetworkGraph()
@@ -61,7 +61,6 @@ class SimulatorApp(ctk.CTk):
     def _on_device_type_change(self, selected_type: str):
         """Callback when choosing a device type from the Device dropdown."""
         self.net_canvas.set_active_node_type(selected_type)
-        # Automatically set canvas mode to add node when changing device type
         self.mode_selector.set("+ Node")
         self.net_canvas.set_mode("ADD_NODE")
 
@@ -267,10 +266,10 @@ class SimulatorApp(ctk.CTk):
             sticky="nsew"
         )
 
-        # Buttons (Play/Pause/Reset)
+        # Simulation & Threat Module Buttons Frame
         btn_frame = ctk.CTkFrame(left_frame)
         btn_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
-        btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        btn_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
         self.play_button = ctk.CTkButton(
             btn_frame,
@@ -278,31 +277,85 @@ class SimulatorApp(ctk.CTk):
             fg_color="green",
             command=self.play_sim
         )
-
-        self.play_button.grid(
-            row=0,
-            column=0,
-            padx=5,
-            pady=5,
-            sticky="ew"
-        )
-
-        ToolTip(
-            self.play_button,
-            "Start the simulation."
-        )
+        self.play_button.grid(row=0, column=0, padx=3, pady=5, sticky="ew")
+        ToolTip(self.play_button, "Start the simulation.")
 
         ctk.CTkButton(
             btn_frame, text="Pause", fg_color="red", command=self.pause_sim
-        ).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ).grid(row=0, column=1, padx=3, pady=5, sticky="ew")
         
         ctk.CTkButton(
             btn_frame, text="Reset", command=self.reset_sim
-        ).grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        ).grid(row=0, column=2, padx=3, pady=5, sticky="ew")
+
+        # --- Manual Threat Module Buttons ---
+        self.msf_button = ctk.CTkButton(
+            btn_frame,
+            text="Run Metasploit",
+            fg_color="#D9534F",
+            hover_color="#C9302C",
+            command=self.on_click_metasploit
+        )
+        self.msf_button.grid(row=0, column=3, padx=3, pady=5, sticky="ew")
+        ToolTip(self.msf_button, "Manually execute Metasploit lateral movement across infected nodes.")
+
+        self.gerald_button = ctk.CTkButton(
+            btn_frame,
+            text="Run Gerald",
+            fg_color="#F0AD4E",
+            hover_color="#EC971F",
+            command=self.on_click_gerald
+        )
+        self.gerald_button.grid(row=0, column=4, padx=3, pady=5, sticky="ew")
+        ToolTip(self.gerald_button, "Manually execute Gerald password and hash cracking burst.")
 
         # Telemetry Panel
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+
+    # ------------------------------------------------------------------
+    # Manual Threat Module Handlers
+    # ------------------------------------------------------------------
+
+    def on_click_metasploit(self):
+        """Manually trigger Metasploit action and log to telemetry panel."""
+        if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
+            events = self.sim_engine.trigger_metasploit_manual(self.graph)
+            infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
+            telemetry = TelemetryData(
+                step=self.sim_engine.step_counter,
+                status="MANUAL METASPLOIT TRIGGER",
+                infected_nodes=infected_cnt,
+                recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count,
+                active_defenses=int(self.slider_def.get() * 10),
+                threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
+                escalation_factor=1.0,
+                sim_time_seconds=self.sim_engine.step_counter,
+                events=events
+            )
+            self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+            self.net_canvas.render()
+
+    def on_click_gerald(self):
+        """Manually trigger Gerald password cracking and log to telemetry panel."""
+        if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
+            events = self.sim_engine.trigger_gerald_manual(self.graph)
+            infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
+            telemetry = TelemetryData(
+                step=self.sim_engine.step_counter,
+                status="MANUAL GERALD CRACK",
+                infected_nodes=infected_cnt,
+                recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count,
+                active_defenses=int(self.slider_def.get() * 10),
+                threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
+                escalation_factor=1.0,
+                sim_time_seconds=self.sim_engine.step_counter,
+                events=events
+            )
+            self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+            self.net_canvas.render()
 
     def _build_menu(self):
         menubar = Menu(self)
@@ -386,7 +439,6 @@ class SimulatorApp(ctk.CTk):
         settings_window.geometry("320x220")
         settings_window.resizable(False, False)
 
-        # Force the window to appear on top
         settings_window.transient(self)
         settings_window.grab_set()
         settings_window.focus_force()
@@ -439,7 +491,6 @@ class SimulatorApp(ctk.CTk):
         self.telemetry_panel.clear()
         self.graph.reset_states()
 
-        # Find user-selected Patient Zero index (or default to 0)
         p0_idx = self.graph.get_patient_zero_index() if self.graph.nodes else 0
 
         for i, node in enumerate(self.graph.nodes):
@@ -492,14 +543,10 @@ class SimulatorApp(ctk.CTk):
         self.net_canvas.render()
         self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
 
-        # -------------------------------------------------------------
-        # ENDGAME TERMINATION CHECK
-        # -------------------------------------------------------------
         total = telemetry.total_nodes
         infected = telemetry.infected_nodes
 
         if total > 0:
-            # Condition 1: Threat Neutralized (Victory)
             if infected == 0:
                 self.pause_sim()
                 self._show_endgame_dialog(
@@ -509,7 +556,6 @@ class SimulatorApp(ctk.CTk):
                 )
                 return
 
-            # Condition 2: Entire Network Infected (Defeat)
             elif infected == total:
                 self.pause_sim()
                 self._show_endgame_dialog(
@@ -519,11 +565,9 @@ class SimulatorApp(ctk.CTk):
                 )
                 return
 
-        # Schedule next loop step
         self.loop_job = self.after(1000, self.run_loop)
 
     def _show_endgame_dialog(self, title: str, message: str, is_victory: bool):
-        """Displays a clean modal popup when simulation reaches an endgame state."""
         dialog = ctk.CTkToplevel(self)
         dialog.title(title)
         dialog.geometry("420x220")
@@ -531,10 +575,8 @@ class SimulatorApp(ctk.CTk):
         dialog.transient(self)
         dialog.grab_set()
 
-        # Header Color
         header_color = "#2E7D32" if is_victory else "#C62828"
 
-        # Title Label
         ctk.CTkLabel(
             dialog,
             text=title,
@@ -542,7 +584,6 @@ class SimulatorApp(ctk.CTk):
             text_color=header_color,
         ).pack(pady=(20, 10))
 
-        # Message Body
         ctk.CTkLabel(
             dialog,
             text=message,
@@ -551,7 +592,6 @@ class SimulatorApp(ctk.CTk):
             justify="center",
         ).pack(pady=10)
 
-        # OK / Close Button
         ctk.CTkButton(
             dialog,
             text="Acknowledge",
