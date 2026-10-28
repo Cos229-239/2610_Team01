@@ -2,6 +2,42 @@ import time
 from typing import List, Dict, Optional, Any
 
 
+class DDoSAttack:
+    """
+    Simulates a volumetric DDoS (Distributed Denial of Service) flood attack.
+    Floods target node buffers, draining defense parameters and compromising host status.
+    """
+
+    def __init__(self, botnet_size: int = 500, bandwidth_gbps: float = 25.0):
+        self.botnet_size = botnet_size
+        self.bandwidth_gbps = bandwidth_gbps
+
+    def execute(self, target_node: Any) -> str:
+        """
+        Executes a volumetric SYN/UDP flood against the target node.
+        """
+        # Force node compromise/overwhelmed state
+        if hasattr(target_node, "status"):
+            target_node.status = "INFECTED"
+        elif hasattr(target_node, "state"):
+            target_node.state = "infected"
+
+        # Drain defense rating if property exists
+        if hasattr(target_node, "defense_power"):
+            target_node.defense_power = max(0, getattr(target_node, "defense_power", 0) - 40)
+
+        node_id = getattr(target_node, "id", "Unknown")
+        log_msg = (
+            f"🌊 [DDoS] Botnet swarm ({self.botnet_size} bots @ {self.bandwidth_gbps} Gbps) "
+            f"overwhelmed Node {node_id}!"
+        )
+
+        if hasattr(target_node, "log_event"):
+            target_node.log_event(log_msg)
+
+        return log_msg
+
+
 class MetasploitAttack:
     """
     Simulates a structured attack separating the initial breach mechanism (Exploit)
@@ -29,7 +65,11 @@ class MetasploitAttack:
         Attempts to breach the target node and deploy the configured payload.
         """
         if self.can_exploit(target_node):
-            target_node.state = "infected"
+            if hasattr(target_node, "status"):
+                target_node.status = "INFECTED"
+            if hasattr(target_node, "state"):
+                target_node.state = "infected"
+
             target_node.active_payload = self.payload_name
             
             # Log telemetry event if node has a telemetry tracker

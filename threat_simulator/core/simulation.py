@@ -1,3 +1,10 @@
+"""
+core/simulation.py
+-------------------
+Core simulation engine managing network tick processing, threat escalation,
+snapshots/telemetry, and manual threat execution (Metasploit, Gerald, DDoS).
+"""
+
 import random
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -5,7 +12,7 @@ from typing import Dict, List, Set, Tuple, Optional
 
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
-from core.threat_modules import MetasploitAttack, GeraldTheSlightFrayer
+from core.threat_modules import MetasploitAttack, GeraldTheSlightFrayer, DDoSAttack
 
 # Attempt C++ module import with graceful fallback
 try:
@@ -61,9 +68,11 @@ class SimulationEngine:
         self.total_recovered_count: int = 0
         self.history: List[SimSnapshot] = []
         self.history_index: int = -1
+        
         # Initialize threat module instances
         self.msf_module = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=45)
         self.gerald_module = GeraldTheSlightFrayer()
+        self.ddos_module = DDoSAttack(botnet_size=1000, bandwidth_gbps=50.0)
 
     def reset(self) -> None:
         self.step_counter = 0
@@ -116,7 +125,7 @@ class SimulationEngine:
         self.msf_module.execute(source_node=source_node, target_node=target_node)
         target_node.status = "INFECTED"
 
-        return [f"🐉 Metasploit payload breached Node {target_idx} ({target_node.id})."]
+        return [f"🐉 Metasploit payload breached Node {target_idx} ({getattr(target_node, 'id', target_idx)})."]
 
     def trigger_gerald_manual(self, graph: NetworkGraph) -> List[str]:
         """Executes a manual Gerald rainbow table cracking burst across active firewalls."""
@@ -135,6 +144,18 @@ class SimulationEngine:
         if cracked_count > 0:
             return [f"⚡ Gerald Rainbow Table burst cracked {cracked_count} firewall credential(s)."]
         return ["⚡ Gerald scanned hashes, but no active firewalls were detected."]
+
+    def trigger_ddos_manual(self, graph: NetworkGraph, target_node_idx: Optional[int] = None) -> List[str]:
+        """Executes a volumetric DDoS attack against a selected node, overwhelming its buffers."""
+        if not graph or not graph.nodes:
+            return ["DDoS trigger failed: No active graph nodes."]
+
+        target_idx = target_node_idx if target_node_idx is not None else 0
+        target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
+        target_node = graph.nodes[target_idx]
+
+        event_msg = self.ddos_module.execute(target_node)
+        return [event_msg]
 
     def msf_attack_triggered(self, inf_idx: int, graph: NetworkGraph, effective_inf_rate: float) -> bool:
         """Triggers probabilistic Metasploit pivoting events during infected states."""
@@ -205,17 +226,12 @@ class SimulationEngine:
         infected_cnt = len(currently_infected)
         capture_ratio = infected_cnt / float(max(1, total_nodes))
 
-        # Base time escalation (+2% per tick, capped at 1.5x)
         time_escalation = 1.0 + min(0.5, self.step_counter * 0.02)
-
-        # Node capture multiplier: Exponential curve scaling from 1.0x up to 100.0x
         capture_escalation = 1.0 + (99.0 * (capture_ratio ** 1.5))
 
-        # Combined AI threat escalation multiplier capped at 100x max strength
         escalation_factor = min(100.0, time_escalation * capture_escalation)
         effective_inf_rate = min(1.0, inf_rate * (escalation_factor ** 0.35))
 
-        # Defense fatigue under persistent infection
         defense_fatigue = max(0.2, 1.0 - (self.step_counter * 0.015))
         effective_def_power = def_power * defense_fatigue
 
@@ -259,7 +275,7 @@ class SimulationEngine:
             if self.msf_attack_triggered(inf_idx, graph, effective_inf_rate):
                 step_events.append(f"Metasploit: Executed automated lateral pivot & SMB exploit from {node_id}")
 
-        # 1. Build Adjacency Map (Excludes Intact Active Firewalls)
+        # Build Adjacency Map
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         for edge in graph.edges:
             if getattr(edge, "is_firewall", False):
@@ -434,7 +450,7 @@ class SimulationEngine:
             threat_level_pct=threat_pct,
             escalation_factor=escalation_factor,
             sim_time_seconds=self.step_counter,
-            events=step_events[:15],  # Limit log size for UI readability
+            events=step_events[:15],
         )
 
         self._record_snapshot(graph, telemetry)
