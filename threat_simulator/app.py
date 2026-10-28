@@ -462,7 +462,15 @@ class SimulatorApp(ctk.CTk):
             variable=dark_var,
             command=lambda: self.toggle_dark_mode(dark_var.get())
         ).pack(padx=20, pady=10, anchor="w")
-
+        # ----- Cyberpunk Theme -----
+        cyber_var = ctk.BooleanVar(value=self.settings.get("cyberpunk_mode", False))
+        ctk.CTkCheckBox(
+            settings_window,
+            text="Cyberpunk Mode (Neon/Dark)",
+            variable=cyber_var,
+            command=lambda: self.toggle_cyberpunk_theme(cyber_var.get())
+        ).pack(padx=20, pady=10, anchor="w")
+        
     def toggle_colorblind(self, enabled: bool):
         self.settings["colorblind_mode"] = enabled
         self.net_canvas.set_colorblind_mode(enabled)
@@ -473,6 +481,31 @@ class SimulatorApp(ctk.CTk):
             ctk.set_appearance_mode("Dark")
         else:
             ctk.set_appearance_mode("Light")
+    def toggle_cyberpunk_theme(self, enabled: bool):
+        self.settings["cyberpunk_mode"] = enabled
+        if enabled:
+            ctk.set_appearance_mode("Dark")
+            self.settings["dark_mode"] = True
+            
+            # Cyberpunk Neon Palette
+            bg_dark = "#090a0f"      # Deep void black/blue
+            panel_dark = "#121420"   # Dark slate purple
+            neon_cyan = "#00f0ff"    # Glowing cyan
+            neon_magenta = "#ff007f" # Neon pink/magenta
+            
+            # Apply custom theme colors to active buttons and frames
+            self.configure(fg_color=bg_dark)
+            if hasattr(self, 'msf_button'):
+                self.msf_button.configure(fg_color=neon_magenta, hover_color="#cc0066", text_color="#ffffff")
+            if hasattr(self, 'gerald_button'):
+                self.gerald_button.configure(fg_color=neon_cyan, hover_color="#00b8c4", text_color="#000000")
+        else:
+            # Revert to standard colors
+            ctk.set_appearance_mode("Dark" if self.settings["dark_mode"] else "Light")
+            if hasattr(self, 'msf_button'):
+                self.msf_button.configure(fg_color="#D9534F", hover_color="#C9302C")
+            if hasattr(self, 'gerald_button'):
+                self.gerald_button.configure(fg_color="#F0AD4E", hover_color="#EC971F")
 
     def play_sim(self):
         if not self.is_running:
