@@ -114,6 +114,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.bind("<Button-1>", self._on_click)
         self.bind("<B1-Motion>", self._on_drag)
         self.bind("<Motion>", self._on_mouse_move)
+        self.bind("<Double-Button-1>", self._on_double_click)
 
         # Pan Binds (Right-Click Drag)
         self.bind("<Button-3>", self._start_pan)
@@ -208,6 +209,18 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.pan_offset_y = event.y - self._pan_start_y
         self.render()
 
+    def _on_double_click(self, event):
+        """Double-click a node to edit its IP address and subnet."""
+        if not self.graph:
+            return
+
+        world_x, world_y = self.screen_to_world(event.x, event.y)
+        clicked_idx = self._get_node_at_pos(world_x, world_y)
+
+        if clicked_idx is not None:
+            self.selected_node_idx = clicked_idx
+            self._edit_node_ip_dialog(clicked_idx)
+
     # ------------------------------------------------------------------
     # Canvas Mode Setup
     # ------------------------------------------------------------------
@@ -262,6 +275,61 @@ class NetworkCanvas(ctk.CTkCanvas):
             else:
                 self.graph.toggle_firewall_at_index(edge_idx, custom_pwd=user_pwd)
             self.render()
+
+    def _edit_node_ip_dialog(self, node_idx: int):
+        """Opens a dialog to manually edit the IP address and subnet of a node."""
+        if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
+            return
+
+        node = self.graph.nodes[node_idx]
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Edit IP - {node.id}")
+        dialog.geometry("340x220")
+        dialog.resizable(False, False)
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+
+        # Center the dialog roughly
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + 80
+        y = self.winfo_rooty() + 80
+        dialog.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(dialog, text=f"Node: {node.id}", font=("Arial", 13, "bold")).pack(pady=(15, 8))
+
+        # IP Address
+        ctk.CTkLabel(dialog, text="IP Address:").pack(anchor="w", padx=25)
+        ip_entry = ctk.CTkEntry(dialog, width=260, placeholder_text="e.g. 192.168.10.5")
+        ip_entry.pack(padx=25, pady=(0, 10))
+        ip_entry.insert(0, node.ip_address or "")
+
+        # Subnet
+        ctk.CTkLabel(dialog, text="Subnet:").pack(anchor="w", padx=25)
+        subnet_entry = ctk.CTkEntry(dialog, width=260, placeholder_text="e.g. 192.168.10.0/24")
+        subnet_entry.pack(padx=25, pady=(0, 15))
+        subnet_entry.insert(0, node.subnet or "")
+
+        def save():
+            new_ip = ip_entry.get().strip()
+            new_subnet = subnet_entry.get().strip()
+
+            if not new_ip or not new_subnet:
+                return  # simple validation – both required
+
+            # Use the helper we added earlier
+            self.graph.set_node_ip(node_idx, new_ip, new_subnet)
+            self.render()
+            dialog.destroy()
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=5)
+
+        ctk.CTkButton(btn_frame, text="Save", width=100, command=save).pack(side="left", padx=8)
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, fg_color="gray", command=dialog.destroy).pack(side="left", padx=8)
+
+        # Focus the IP field
+        ip_entry.focus_set()
 
     def _on_click(self, event):
         if not self.graph:
