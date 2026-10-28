@@ -2,6 +2,7 @@ import random
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple, Optional
+
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
 from core.threat_modules import MetasploitAttack, GeraldTheSlightFrayer
@@ -44,7 +45,6 @@ class TelemetryData:
             f" └── Threat Level: {self.threat_level_pct:.1f}%\n"
             f"{events_section}\n"
         )
-        
 
 
 @dataclass
@@ -98,6 +98,47 @@ class SimulationEngine:
 
     def can_step_forward(self) -> bool:
         return self.history_index < len(self.history) - 1
+
+    # ------------------------------------------------------------------
+    # MANUAL THREAT MODULE TRIGGERS
+    # ------------------------------------------------------------------
+
+    def trigger_metasploit_manual(self, graph: NetworkGraph, target_node_idx: Optional[int] = None) -> List[str]:
+        """Executes a manual Metasploit lateral movement attack against a target node."""
+        if not graph or not graph.nodes:
+            return ["Metasploit trigger failed: No active graph nodes."]
+
+        target_idx = target_node_idx if target_node_idx is not None else 0
+        target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
+        target_node = graph.nodes[target_idx]
+
+        source_node = graph.nodes[0] if graph.nodes else target_node
+        self.msf_module.execute(source_node=source_node, target_node=target_node)
+        target_node.status = "INFECTED"
+
+        return [f"🐉 Metasploit payload breached Node {target_idx} ({target_node.id})."]
+
+    def trigger_gerald_manual(self, graph: NetworkGraph) -> List[str]:
+        """Executes a manual Gerald rainbow table cracking burst across active firewalls."""
+        if not graph or not graph.edges:
+            return ["Gerald scan finished: No network edges found."]
+
+        cracked_count = 0
+        for edge in graph.edges:
+            if getattr(edge, "is_firewall", False):
+                edge.is_firewall = False
+                edge.crack_progress = 1.0
+                edge.crack_attempts = getattr(edge, "required_attempts", 1000)
+                edge.status = "INFECTED"
+                cracked_count += 1
+
+        if cracked_count > 0:
+            return [f"⚡ Gerald Rainbow Table burst cracked {cracked_count} firewall credential(s)."]
+        return ["⚡ Gerald scanned hashes, but no active firewalls were detected."]
+
+    def msf_attack_triggered(self, inf_idx: int, graph: NetworkGraph, effective_inf_rate: float) -> bool:
+        """Triggers probabilistic Metasploit pivoting events during infected states."""
+        return random.random() < (effective_inf_rate * 0.25)
 
     def _calculate_target_priority(
         self,
@@ -153,12 +194,13 @@ class SimulationEngine:
         currently_infected = {
             i
             for i, node in enumerate(graph.nodes)
-            if node.status == "INFECTED" or node.is_patient_zero
+            if getattr(node, "status", "") == "INFECTED" or getattr(node, "is_patient_zero", False)
         }
         if not currently_infected and graph.nodes:
-            p0_idx = graph.get_patient_zero_index()
-            graph.nodes[p0_idx].status = "INFECTED"
-            currently_infected.add(p0_idx)
+            p0_idx = getattr(graph, "get_patient_zero_index", lambda: 0)()
+            if p0_idx < len(graph.nodes):
+                graph.nodes[p0_idx].status = "INFECTED"
+                currently_infected.add(p0_idx)
 
         infected_cnt = len(currently_infected)
         capture_ratio = infected_cnt / float(max(1, total_nodes))
@@ -188,7 +230,7 @@ class SimulationEngine:
                 if u_inf or v_inf:
                     req_attempts = getattr(edge, "required_attempts", 0)
                     if req_attempts <= 0:
-                        req_attempts = calculate_password_search_space(edge.password)
+                        req_attempts = calculate_password_search_space(getattr(edge, "password", "123"))
                         edge.required_attempts = req_attempts
 
                     base_tries = 5000
@@ -234,7 +276,7 @@ class SimulationEngine:
             for neighbor_idx in adj[inf_idx]:
                 if (
                     graph.nodes[neighbor_idx].status in ("HEALTHY", "WARNING")
-                    and not graph.nodes[neighbor_idx].is_patient_zero
+                    and not getattr(graph.nodes[neighbor_idx], "is_patient_zero", False)
                 ):
                     attack_candidates[neighbor_idx] = (
                         attack_candidates.get(neighbor_idx, 0) + 1
@@ -309,7 +351,7 @@ class SimulationEngine:
         recovery_chance = max(0.02, effective_def_power * 0.35)
         for inf_idx in list(currently_infected):
             node = graph.nodes[inf_idx]
-            if node.is_patient_zero:
+            if getattr(node, "is_patient_zero", False):
                 healthy_neighbors = sum(
                     1
                     for n_idx in adj[inf_idx]
@@ -397,9 +439,3 @@ class SimulationEngine:
 
         self._record_snapshot(graph, telemetry)
         return telemetry
-
-    def msf_attack_triggered(self, inf_idx: int, graph: NetworkGraph, effective_inf_rate: float) -> bool:
-        """Triggers probabilistic Metasploit pivoting events during infected states."""
-        if random.random() < (effective_inf_rate * 0.25):
-            return True
-        return False

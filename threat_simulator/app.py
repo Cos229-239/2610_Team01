@@ -89,7 +89,7 @@ class SimulatorApp(ctk.CTk):
         else:
             self.graph.clear()
 
-        self.net_canvas.set_graph(self.graph)
+        self.canvas_wrapper.set_graph(self.graph)
 
     # ------------------------------------------------------------------
     # UI Layout Builder
@@ -251,14 +251,15 @@ class SimulatorApp(ctk.CTk):
             "Increase the network's ability to resist infection."
         )
 
-        # Canvas View Wrapper
-        self.net_canvas = CanvasView(left_frame, self.sim_engine)
+        # Canvas View Wrapper & Direct Canvas Reference
+        self.canvas_wrapper = CanvasView(left_frame, self.sim_engine)
+        self.net_canvas = self.canvas_wrapper.canvas
 
-        self.net_canvas.set_node_select_callback(
+        self.canvas_wrapper.set_node_select_callback(
             self.on_node_selected
         )
 
-        self.net_canvas.grid(
+        self.canvas_wrapper.grid(
             row=2,
             column=0,
             padx=10,
@@ -318,9 +319,11 @@ class SimulatorApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def on_click_metasploit(self):
-        """Manually trigger Metasploit action and log to telemetry panel."""
+        """Manually trigger Metasploit action on the targeted node and log to telemetry panel."""
         if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
-            events = self.sim_engine.trigger_metasploit_manual(self.graph)
+            target_idx = getattr(self.net_canvas, "selected_node_idx", 0) or 0
+            events = self.sim_engine.trigger_metasploit_manual(self.graph, target_node_idx=target_idx)
+            
             infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
             telemetry = TelemetryData(
                 step=self.sim_engine.step_counter,
@@ -335,7 +338,11 @@ class SimulatorApp(ctk.CTk):
                 events=events
             )
             self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
-            self.net_canvas.render()
+            
+            if hasattr(self.net_canvas, "flash_target_node"):
+                self.net_canvas.flash_target_node(target_idx)
+            else:
+                self.net_canvas.render()
 
     def on_click_gerald(self):
         """Manually trigger Gerald password cracking and log to telemetry panel."""
@@ -366,7 +373,7 @@ class SimulatorApp(ctk.CTk):
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Clear Canvas", command=self._clear_canvas)
         file_menu.add_separator()
-        file_menu.add_command(label="Export Simulation Report", command=self.net_canvas.trigger_export)
+        file_menu.add_command(label="Export Simulation Report", command=self.canvas_wrapper.trigger_export)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.destroy)
 
@@ -465,7 +472,7 @@ class SimulatorApp(ctk.CTk):
 
     def toggle_colorblind(self, enabled: bool):
         self.settings["colorblind_mode"] = enabled
-        self.net_canvas.set_colorblind_mode(enabled)
+        self.canvas_wrapper.set_colorblind_mode(enabled)
 
     def toggle_dark_mode(self, enabled: bool):
         self.settings["dark_mode"] = enabled
