@@ -3,7 +3,7 @@ import random
 import string
 from dataclasses import dataclass, field
 from typing import List, Optional
-from core.node_types import NODE_TYPES
+from .node_types import NODE_TYPES
 
 
 def calculate_password_search_space(password: str) -> int:
