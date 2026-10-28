@@ -104,12 +104,21 @@ class NetworkGraph:
 
         return ip, subnet
 
-    def add_node(self, x: float, y: float, node_type: str = "PC") -> Node:
+    def add_node(self, x: float, y: float, node_type: str = "PC", ip_address: Optional[str] = None, subnet: Optional[str] = None,) -> Node:
         """Adds a new node with a specific device type at canvas coordinates."""
         node_id = f"{node_type[:2].upper()}-{len(self.nodes) + 1:02d}"
         is_first = len(self.nodes) == 0
 
-        ip, subnet = self._generate_unique_subnet_and_ip()
+        if ip_address is None or subnet is None:
+            # Automatic unique subnet mode
+            auto_ip, auto_subnet = self._generate_unique_subnet_and_ip()
+            ip_address = ip_address or auto_ip
+            subnet = subnet or auto_subnet
+        else:
+            # Manual mode - still advance the counter so future auto nodes stay unique
+            self._netd_subnet += 1
+
+        # ip, subnet = self._generate_unique_subnet_and_ip()
 
         new_node = Node(
             id=node_id,
@@ -118,11 +127,30 @@ class NetworkGraph:
             x=x,
             y=y,
             is_patient_zero=is_first,
-            ip_address=ip,
+            ip_address=ip_address,
             subnet=subnet,
         )
         self.nodes.append(new_node)
         return new_node
+
+    def set_node_ip(
+        self,
+        node_index: int,
+        ip_address: str,
+        subnet: str,
+        ) -> bool:
+        """
+        Manually set (or change) the IP address and subnet of an existing node.
+
+        Returns True on success, False if the index is invalid.
+        """
+        if not (0 <= node_index < len(self.nodes)):
+            return False
+
+        node = self.nodes[node_index]
+        node.ip_address = ip_address.strip()
+        node.subnet = subnet.strip()
+        return True
 
     def add_edge(self, u_index: int, v_index: int):
         """Adds an undirected edge between two node indices if valid."""
