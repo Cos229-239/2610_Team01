@@ -21,7 +21,8 @@ class SimulatorApp(ctk.CTk):
         self.loop_job = None
         self.settings = {
             "colorblind_mode": False,
-            "dark_mode": False
+            "dark_mode": False,
+            "cyberpunk_mode": False
         }
 
         self._build_ui()
@@ -267,10 +268,10 @@ class SimulatorApp(ctk.CTk):
             sticky="nsew"
         )
 
-        # Simulation & Threat Module Buttons Frame
+        # Simulation & Threat Module Buttons Frame (Expanded for 6 Buttons)
         btn_frame = ctk.CTkFrame(left_frame)
         btn_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
-        btn_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        btn_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
 
         self.play_button = ctk.CTkButton(
             btn_frame,
@@ -278,16 +279,16 @@ class SimulatorApp(ctk.CTk):
             fg_color="green",
             command=self.play_sim
         )
-        self.play_button.grid(row=0, column=0, padx=3, pady=5, sticky="ew")
+        self.play_button.grid(row=0, column=0, padx=2, pady=5, sticky="ew")
         ToolTip(self.play_button, "Start the simulation.")
 
         ctk.CTkButton(
             btn_frame, text="Pause", fg_color="red", command=self.pause_sim
-        ).grid(row=0, column=1, padx=3, pady=5, sticky="ew")
+        ).grid(row=0, column=1, padx=2, pady=5, sticky="ew")
         
         ctk.CTkButton(
             btn_frame, text="Reset", command=self.reset_sim
-        ).grid(row=0, column=2, padx=3, pady=5, sticky="ew")
+        ).grid(row=0, column=2, padx=2, pady=5, sticky="ew")
 
         # --- Manual Threat Module Buttons ---
         self.msf_button = ctk.CTkButton(
@@ -297,7 +298,7 @@ class SimulatorApp(ctk.CTk):
             hover_color="#C9302C",
             command=self.on_click_metasploit
         )
-        self.msf_button.grid(row=0, column=3, padx=3, pady=5, sticky="ew")
+        self.msf_button.grid(row=0, column=3, padx=2, pady=5, sticky="ew")
         ToolTip(self.msf_button, "Manually execute Metasploit lateral movement across infected nodes.")
 
         self.gerald_button = ctk.CTkButton(
@@ -307,8 +308,18 @@ class SimulatorApp(ctk.CTk):
             hover_color="#EC971F",
             command=self.on_click_gerald
         )
-        self.gerald_button.grid(row=0, column=4, padx=3, pady=5, sticky="ew")
+        self.gerald_button.grid(row=0, column=4, padx=2, pady=5, sticky="ew")
         ToolTip(self.gerald_button, "Manually execute Gerald password and hash cracking burst.")
+
+        self.ddos_button = ctk.CTkButton(
+            btn_frame,
+            text="Run DDoS",
+            fg_color="#9C27B0",
+            hover_color="#7B1FA2",
+            command=self.on_click_ddos
+        )
+        self.ddos_button.grid(row=0, column=5, padx=2, pady=5, sticky="ew")
+        ToolTip(self.ddos_button, "Execute a volumetric DDoS flood against the selected node.")
 
         # Telemetry Panel
         self.telemetry_panel = TelemetryPanel(self)
@@ -363,6 +374,32 @@ class SimulatorApp(ctk.CTk):
             )
             self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
             self.net_canvas.render()
+
+    def on_click_ddos(self):
+        """Manually trigger a DDoS flood on the targeted node and log to telemetry panel."""
+        if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
+            target_idx = getattr(self.net_canvas, "selected_node_idx", 0) or 0
+            events = self.sim_engine.trigger_ddos_manual(self.graph, target_node_idx=target_idx)
+            
+            infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
+            telemetry = TelemetryData(
+                step=self.sim_engine.step_counter,
+                status="VOLUMETRIC DDOS ATTACK",
+                infected_nodes=infected_cnt,
+                recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count,
+                active_defenses=int(self.slider_def.get() * 10),
+                threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
+                escalation_factor=1.0,
+                sim_time_seconds=self.sim_engine.step_counter,
+                events=events
+            )
+            self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+            
+            if hasattr(self.net_canvas, "flash_target_node"):
+                self.net_canvas.flash_target_node(target_idx)
+            else:
+                self.net_canvas.render()
 
     def _build_menu(self):
         menubar = Menu(self)
@@ -469,6 +506,7 @@ class SimulatorApp(ctk.CTk):
             variable=dark_var,
             command=lambda: self.toggle_dark_mode(dark_var.get())
         ).pack(padx=20, pady=10, anchor="w")
+
         # ----- Cyberpunk Theme -----
         cyber_var = ctk.BooleanVar(value=self.settings.get("cyberpunk_mode", False))
         ctk.CTkCheckBox(
@@ -488,6 +526,7 @@ class SimulatorApp(ctk.CTk):
             ctk.set_appearance_mode("Dark")
         else:
             ctk.set_appearance_mode("Light")
+
     def toggle_cyberpunk_theme(self, enabled: bool):
         self.settings["cyberpunk_mode"] = enabled
         if enabled:
@@ -496,23 +535,25 @@ class SimulatorApp(ctk.CTk):
             
             # Cyberpunk Neon Palette
             bg_dark = "#090a0f"      # Deep void black/blue
-            panel_dark = "#121420"   # Dark slate purple
             neon_cyan = "#00f0ff"    # Glowing cyan
             neon_magenta = "#ff007f" # Neon pink/magenta
+            neon_purple = "#b026ff"  # Neon purple
             
-            # Apply custom theme colors to active buttons and frames
             self.configure(fg_color=bg_dark)
             if hasattr(self, 'msf_button'):
                 self.msf_button.configure(fg_color=neon_magenta, hover_color="#cc0066", text_color="#ffffff")
             if hasattr(self, 'gerald_button'):
                 self.gerald_button.configure(fg_color=neon_cyan, hover_color="#00b8c4", text_color="#000000")
+            if hasattr(self, 'ddos_button'):
+                self.ddos_button.configure(fg_color=neon_purple, hover_color="#8b00e6", text_color="#ffffff")
         else:
-            # Revert to standard colors
             ctk.set_appearance_mode("Dark" if self.settings["dark_mode"] else "Light")
             if hasattr(self, 'msf_button'):
                 self.msf_button.configure(fg_color="#D9534F", hover_color="#C9302C")
             if hasattr(self, 'gerald_button'):
                 self.gerald_button.configure(fg_color="#F0AD4E", hover_color="#EC971F")
+            if hasattr(self, 'ddos_button'):
+                self.ddos_button.configure(fg_color="#9C27B0", hover_color="#7B1FA2")
 
     def play_sim(self):
         if not self.is_running:

@@ -28,8 +28,8 @@ HELP_TOPICS = [
         "As the AI infects more nodes, its Botnet Power scales up to 100x, cracking simple keys almost instantly!",
     ),
     (
-        "🐉 Metasploit & Gerald",
-        "Type 'exploit node 1' to run Metasploit, or 'run gerald' to instantly breach active firewalls using rainbow tables!",
+        "🐉 Metasploit, Gerald & DDoS",
+        "Type 'exploit', 'run gerald', or 'ddos' to execute targeted attack payloads against selected nodes or firewalls!",
     ),
     (
         "⏮️ Time Travel",
@@ -59,7 +59,6 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.overrideredirect(True)
         self.attributes("-topmost", True)
 
-        # Set valid background color matching CustomTkinter dark/light themes
         self.configure(fg_color=("gray90", "gray13"))
 
         # Main Container Frame using grid layout
@@ -159,7 +158,6 @@ class ClippyAssistant(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def _focus_entry(self, event=None):
-        """Forces window and entry widget focus when user clicks inside text box."""
         self.lift()
         self.focus_force()
         self.entry_box.focus_set()
@@ -169,7 +167,6 @@ class ClippyAssistant(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def send_message(self):
-        """Processes user chat input, renders an instant message, and displays a typing animation."""
         user_text = self.entry_box.get().strip()
         if not user_text:
             return
@@ -183,7 +180,6 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.after(450, lambda: self._handle_reply(user_text))
 
     def _show_typing_indicator(self):
-        """Renders a temporary typing bubble."""
         self._remove_typing_indicator()
         self.typing_frame = ctk.CTkFrame(
             self.chat_scroll, fg_color=("gray75", "gray30"), corner_radius=8
@@ -200,19 +196,16 @@ class ClippyAssistant(ctk.CTkToplevel):
         self._scroll_to_bottom()
 
     def _remove_typing_indicator(self):
-        """Removes typing bubble from view."""
         if self.typing_frame and self.typing_frame.winfo_exists():
             self.typing_frame.destroy()
             self.typing_frame = None
 
     def _handle_reply(self, user_text: str):
-        """Generates and displays the assistant's reply."""
         self._remove_typing_indicator()
         reply = self._generate_response(user_text)
         self._append_message("Clippy", reply, is_user=False)
 
     def _append_message(self, sender: str, text: str, is_user: bool):
-        """Renders speech bubbles inside the scrollable chat frame."""
         msg_frame = ctk.CTkFrame(
             self.chat_scroll,
             fg_color=("#1E88E5", "#1565C0") if is_user else ("gray75", "gray30"),
@@ -232,7 +225,6 @@ class ClippyAssistant(ctk.CTkToplevel):
         self._scroll_to_bottom()
 
     def _scroll_to_bottom(self):
-        """Forces chat scrollview to lock to the bottom."""
         self.update_idletasks()
         try:
             self.chat_scroll._parent_canvas.yview_moveto(1.0)
@@ -240,10 +232,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             pass
 
     def _generate_response(self, query: str) -> str:
-        """Parses user input to trigger app controls, live telemetry, and Metasploit/Gerald threat execution."""
         q = query.lower().strip()
-
-        # Dynamically fetch current graph instance from main application window
         current_graph = getattr(self.parent, "graph", self.graph)
 
         telemetry = None
@@ -260,18 +249,15 @@ class ClippyAssistant(ctk.CTkToplevel):
 
             net_canvas = getattr(self.parent, "net_canvas", None)
 
-            # Check if user explicitly typed a number (e.g. "exploit node 3")
             target_idx = None
             for word in q.split():
                 if word.isdigit():
                     target_idx = int(word)
                     break
 
-            # Fallback 1: Use selected node index from canvas click
             if target_idx is None and net_canvas:
                 target_idx = getattr(net_canvas, "selected_node_idx", None)
 
-            # Fallback 2: Default to node 0
             if target_idx is None:
                 target_idx = 0
 
@@ -285,22 +271,61 @@ class ClippyAssistant(ctk.CTkToplevel):
 
                 source = current_graph.nodes[0] if current_graph.nodes else target_node
                 msf.execute(source_node=source, target_node=target_node)
-                
                 target_node.status = "INFECTED"
 
-                # Trigger canvas flash animation & rerender
                 if net_canvas:
                     if hasattr(net_canvas, "flash_target_node"):
                         net_canvas.flash_target_node(target_idx)
                     else:
                         net_canvas.render()
 
-                return f"🐉 [Metasploit] Executed payload against Node {target_idx}! Status set to INFECTED."
+                return f"🐉 [Metasploit] Executed payload against Node {target_idx}! Target set to INFECTED."
             
             return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
 
         # -------------------------------------------------------------
-        # 2. GERALD THE SLIGHT FRAYER (RAINBOW TABLE LOOKUP)
+        # 2. VOLUMETRIC DDOS FLOOD COMMANDS
+        # -------------------------------------------------------------
+        elif "ddos" in q or "flood" in q or "dos" in q:
+            if not current_graph or not getattr(current_graph, "nodes", None):
+                return "No canvas topology found! Select or place a network topology on the canvas first."
+
+            net_canvas = getattr(self.parent, "net_canvas", None)
+
+            target_idx = None
+            for word in q.split():
+                if word.isdigit():
+                    target_idx = int(word)
+                    break
+
+            if target_idx is None and net_canvas:
+                target_idx = getattr(net_canvas, "selected_node_idx", None)
+
+            if target_idx is None:
+                target_idx = 0
+
+            if 0 <= target_idx < len(current_graph.nodes):
+                target_node = current_graph.nodes[target_idx]
+
+                if hasattr(self.sim_engine, "trigger_ddos_manual"):
+                    self.sim_engine.trigger_ddos_manual(current_graph, target_node_idx=target_idx)
+                else:
+                    from core.threat_modules import DDoSAttack
+                    ddos = getattr(self.sim_engine, "ddos_module", DDoSAttack(botnet_size=1000, bandwidth_gbps=50.0))
+                    ddos.execute(target_node)
+
+                if net_canvas:
+                    if hasattr(net_canvas, "flash_target_node"):
+                        net_canvas.flash_target_node(target_idx)
+                    else:
+                        net_canvas.render()
+
+                return f"🌊 [DDoS Flood] Executed volumetric packet swarm against Node {target_idx}! Buffer overwhelmed."
+
+            return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
+
+        # -------------------------------------------------------------
+        # 3. GERALD THE SLIGHT FRAYER (RAINBOW TABLE LOOKUP)
         # -------------------------------------------------------------
         elif "gerald" in q or "frayer" in q or "rainbow" in q or "crack" in q:
             if not current_graph or not getattr(current_graph, "edges", None):
@@ -322,7 +347,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             return "⚡ [Gerald the Slight Frayer] Scanned network hashes, but all active firewalls are already breached or uninitialized."
 
         # -------------------------------------------------------------
-        # 3. SIMULATION EXECUTION CONTROLS
+        # 4. SIMULATION EXECUTION CONTROLS
         # -------------------------------------------------------------
         elif "start" in q or "run" in q or "play" in q or "go" in q:
             if hasattr(self.parent, "play_sim"):
@@ -353,7 +378,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             return "Unable to clear canvas."
 
         # -------------------------------------------------------------
-        # 4. LIVE TELEMETRY QUERIES
+        # 5. LIVE TELEMETRY QUERIES
         # -------------------------------------------------------------
         elif "infected" in q or "status" in q or "how many" in q or "state" in q or "outbreak" in q:
             if not telemetry or telemetry.total_nodes == 0:
@@ -395,34 +420,26 @@ class ClippyAssistant(ctk.CTkToplevel):
             return f"⚡ Current Botnet Threat Power is running at {power:.2f}x strength!"
 
         elif "hi" in q or "hello" in q or "hey" in q:
-            return "Greetings Commander! Try commands like: 'start', 'pause', 'exploit node 1', or 'run gerald'."
+            return "Greetings Commander! Try typing: 'exploit', 'ddos', 'run gerald', 'start', or 'pause'."
         else:
-            return "I can control the simulation! Try typing: 'start', 'pause', 'exploit node 2', 'run gerald', or 'status'."
+            return "I can control the simulation! Try typing: 'exploit', 'ddos', 'run gerald', 'start', 'pause', or 'status'."
 
     def next_tip(self):
-        """Displays the next guided tip topic directly in the chat window."""
         self.topic_index = (self.topic_index + 1) % len(HELP_TOPICS)
         title, tip = HELP_TOPICS[self.topic_index]
         self._append_message("Clippy Tip", f"[{title}] {tip}", is_user=False)
 
-    # ------------------------------------------------------------------
-    # Drag & Position Handlers
-    # ------------------------------------------------------------------
-
     def _start_drag(self, event):
-        """Records initial drag offsets."""
         self._drag_start_x = event.x_root - self.winfo_x()
         self._drag_start_y = event.y_root - self.winfo_y()
         self.is_custom_positioned = True
 
     def _on_drag(self, event):
-        """Updates window coordinates on mouse drag."""
         new_x = event.x_root - self._drag_start_x
         new_y = event.y_root - self._drag_start_y
         self.geometry(f"+{new_x}+{new_y}")
 
     def reposition(self):
-        """Snaps window near bottom-right corner unless manually dragged by user."""
         if not self.winfo_exists() or self.is_custom_positioned:
             return
         try:
@@ -445,7 +462,6 @@ class ClippyAssistant(ctk.CTkToplevel):
             pass
 
     def _animate_idle(self):
-        """Creates a continuous floating bounce effect for the assistant header."""
         if self.winfo_exists() and self.winfo_viewable():
             self.anim_phase += 0.2
             offset = int(math.sin(self.anim_phase) * 2)
@@ -455,12 +471,10 @@ class ClippyAssistant(ctk.CTkToplevel):
             self.after(90, self._animate_idle)
 
     def show(self):
-        """Shows and updates position."""
         self.deiconify()
         self._focus_entry()
         self.reposition()
         self._animate_idle()
 
     def hide(self):
-        """Hides the assistant window."""
         self.withdraw()
