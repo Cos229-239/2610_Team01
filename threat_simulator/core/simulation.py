@@ -1,15 +1,7 @@
 import random
 from copy import deepcopy
 from dataclasses import dataclass
-<<<<<<< HEAD
 from typing import Dict, List, Set, Tuple, Optional
-=======
-from typing import List, Set
-from .topology import NetworkGraph
-from threat_simulator.core.node_types import NODE_TYPES
-from threat_simulator.threat_modules import MetasploitAttack, GeraldTheSlightFrayer, get_pivoted_targets
->>>>>>> 9c0a8cf (Integrate Metasploit threat modules and Gerald the Slight Frayer password cracker into simulation engine)
-
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
 
@@ -37,20 +29,14 @@ class TelemetryData:
     def format_log(self) -> str:
         engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Strategic Engine]"
         return (
-<<<<<<< HEAD
             f"[STEP {self.step} | {self.sim_time_seconds}s] {engine_tag} Status: {self.status}\n"
             f" ├── Infection Power: {self.escalation_factor:.2f}x (Escalating)\n"
             f" ├── Infected: {self.infected_nodes}/{self.total_nodes}\n"
             f" ├── Recovered/Secured: {self.recovered_nodes}\n"
             f" ├── Active Defenses: {self.active_defenses}\n"
             f" └── Threat Level: {self.threat_level_pct:.1f}%\n\n"
-=======
-            f"{engine_tag} t = {self.sim_time_seconds:3d}s    |    {self.status}\n"
-            f"  |-- Infected Nodes: {self.infected_nodes}/{self.total_nodes}\n"
-            f"  |-- Active Defenses: {self.active_defenses}\n"
-            f"  |-- Threat Level: {self.threat_level_pct:.1f}%\n\n"
->>>>>>> 9c0a8cf (Integrate Metasploit threat modules and Gerald the Slight Frayer password cracker into simulation engine)
         )
+        
 
 
 @dataclass
@@ -164,7 +150,6 @@ class SimulationEngine:
         infected_cnt = len(currently_infected)
         capture_ratio = infected_cnt / float(max(1, total_nodes))
 
-<<<<<<< HEAD
         # Base time escalation (+2% per tick, capped at 1.5x)
         time_escalation = 1.0 + min(0.5, self.step_counter * 0.02)
 
@@ -174,44 +159,15 @@ class SimulationEngine:
         # Combined AI threat escalation multiplier capped at 100x max strength
         escalation_factor = min(100.0, time_escalation * capture_escalation)
         effective_inf_rate = min(1.0, inf_rate * (escalation_factor ** 0.35))
-=======
-        # Instantiate threat modules for this simulation tick
-        msf_attack = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=45)
-        gerald_cracker = GeraldTheSlightFrayer()
-
-        # 1. Update Node Statuses & Threat Modules
-        for i, node in enumerate(graph.nodes):
-            if i in infected_set:
-                if node.infection_step == -1:
-                    node.infection_step = self.step_counter
-
-                node.status = "INFECTED"
-                
-                # Metasploit Lateral Movement / Pivoting
-                pivoted_targets = get_pivoted_targets(node, graph)
-                for target in pivoted_targets:
-                    if getattr(target, "status", "") != "INFECTED" and msf_attack.can_exploit(target):
-                        msf_attack.execute(node, target)
->>>>>>> 9c0a8cf (Integrate Metasploit threat modules and Gerald the Slight Frayer password cracker into simulation engine)
 
         # Defense fatigue under persistent infection
         defense_fatigue = max(0.2, 1.0 - (self.step_counter * 0.015))
         effective_def_power = def_power * defense_fatigue
 
-<<<<<<< HEAD
         # -------------------------------------------------------------
         # ADAPTIVE FIREWALL PASSWORD CRACKING PHASE
         # -------------------------------------------------------------
-=======
-            else:
-                node.status = "HEALTHY"
-
-            # Gerald the Slight Frayer (Mock Hash Lookup)
-            if getattr(node, "has_password", True) and not getattr(node, "password_cracked", False):
-                gerald_cracker.crack_password(node)
-
         # 2. Update Edge Statuses (Highlight edges where infection flows)
->>>>>>> 9c0a8cf (Integrate Metasploit threat modules and Gerald the Slight Frayer password cracker into simulation engine)
         for edge in graph.edges:
             if getattr(edge, "is_firewall", False):
                 u_inf = graph.nodes[edge.u].status == "INFECTED"
