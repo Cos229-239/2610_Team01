@@ -1,9 +1,10 @@
 import random
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple, Optional
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
+from core.threat_modules import MetasploitAttack, GeraldTheSlightFrayer
 
 # Attempt C++ module import with graceful fallback
 try:
@@ -25,16 +26,23 @@ class TelemetryData:
     threat_level_pct: float
     escalation_factor: float = 1.0
     sim_time_seconds: int = 0
+    events: List[str] = field(default_factory=list)
 
     def format_log(self) -> str:
         engine_tag = "[C++ Engine]" if HAS_CPP_ENGINE else "[Python Strategic Engine]"
+        
+        events_section = ""
+        if self.events:
+            events_section = " ── [Threat Module Actions]:\n" + "".join([f"      * {ev}\n" for ev in self.events]) + "\n"
+
         return (
             f"[STEP {self.step} | {self.sim_time_seconds}s] {engine_tag} Status: {self.status}\n"
             f" ├── Infection Power: {self.escalation_factor:.2f}x (Escalating)\n"
             f" ├── Infected: {self.infected_nodes}/{self.total_nodes}\n"
             f" ├── Recovered/Secured: {self.recovered_nodes}\n"
             f" ├── Active Defenses: {self.active_defenses}\n"
-            f" └── Threat Level: {self.threat_level_pct:.1f}%\n\n"
+            f" └── Threat Level: {self.threat_level_pct:.1f}%\n"
+            f"{events_section}\n"
         )
         
 
@@ -53,6 +61,9 @@ class SimulationEngine:
         self.total_recovered_count: int = 0
         self.history: List[SimSnapshot] = []
         self.history_index: int = -1
+        # Initialize threat module instances
+        self.msf_module = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=45)
+        self.gerald_module = GeraldTheSlightFrayer()
 
     def reset(self) -> None:
         self.step_counter = 0
@@ -118,6 +129,7 @@ class SimulationEngine:
         """Executes a single simulation tick with dynamic password cracking and escalating infection potency."""
         self.step_counter += 1
         total_nodes = graph.node_count
+        step_events: List[str] = []
 
         if total_nodes == 0:
             telemetry = TelemetryData(
@@ -130,6 +142,7 @@ class SimulationEngine:
                 0.0,
                 escalation_factor=1.0,
                 sim_time_seconds=self.step_counter,
+                events=["No active nodes found in simulation topology."]
             )
             self._record_snapshot(graph, telemetry)
             return telemetry
@@ -165,36 +178,44 @@ class SimulationEngine:
         effective_def_power = def_power * defense_fatigue
 
         # -------------------------------------------------------------
-        # ADAPTIVE FIREWALL PASSWORD CRACKING PHASE
+        # ADAPTIVE FIREWALL PASSWORD CRACKING PHASE (GERALD)
         # -------------------------------------------------------------
-        # 2. Update Edge Statuses (Highlight edges where infection flows)
         for edge in graph.edges:
             if getattr(edge, "is_firewall", False):
                 u_inf = graph.nodes[edge.u].status == "INFECTED"
                 v_inf = graph.nodes[edge.v].status == "INFECTED"
                 
-                # Apply brute-force pressure if bordering an infected node
                 if u_inf or v_inf:
-                    # Dynamically compute search space if uninitialized
                     req_attempts = getattr(edge, "required_attempts", 0)
                     if req_attempts <= 0:
                         req_attempts = calculate_password_search_space(edge.password)
                         edge.required_attempts = req_attempts
 
-                    # Base cracking throughput (5,000 tries/step) scaled by botnet power
                     base_tries = 5000
                     tries = int(base_tries * effective_inf_rate * (escalation_factor ** 1.3))
                     
                     edge.crack_attempts = getattr(edge, "crack_attempts", 0) + tries
                     edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
 
-                    # Breach and disarm firewall upon reaching 100%
+                    target_name = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
+                    step_events.append(f"Gerald: Cracking hash on Node {target_name} ({int(edge.crack_progress * 100)}%)")
+
                     if edge.crack_progress >= 1.0:
                         edge.is_firewall = False
                         edge.crack_progress = 0.0
                         edge.crack_attempts = 0
                         edge.password = ""
                         edge.status = "INFECTED"
+                        step_events.append(f"Gerald: Successfully cracked password and breached firewall on Node {target_name}!")
+
+        # -------------------------------------------------------------
+        # METASPLOIT LATERAL PIVOTING & EXPLOITATION
+        # -------------------------------------------------------------
+        for inf_idx in list(currently_infected):
+            inf_node = graph.nodes[inf_idx]
+            node_id = getattr(inf_node, 'id', f"Node-{inf_idx}")
+            if self.msf_attack_triggered(inf_idx, graph, effective_inf_rate):
+                step_events.append(f"Metasploit: Executed automated lateral pivot & SMB exploit from {node_id}")
 
         # 1. Build Adjacency Map (Excludes Intact Active Firewalls)
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
@@ -254,6 +275,7 @@ class SimulationEngine:
                     and random.random() >= block_chance
                 ):
                     newly_infected.add(best_target_idx)
+                    step_events.append(f"Strategic AI: Successfully breached high-priority target Node {getattr(best_node, 'id', best_target_idx)}")
                 for target_idx, _ in ranked_targets[1:]:
                     if len(newly_infected) >= max_breaches:
                         break
@@ -302,9 +324,11 @@ class SimulationEngine:
                 if random.random() < p0_neutralize_chance:
                     node.is_patient_zero = False
                     recovered_this_step.add(inf_idx)
+                    step_events.append(f"Defense: Patient Zero neutralized at Node {getattr(node, 'id', inf_idx)}!")
             else:
                 if random.random() < recovery_chance:
                     recovered_this_step.add(inf_idx)
+                    step_events.append(f"Defense: Node {getattr(node, 'id', inf_idx)} successfully sanitized and recovered.")
 
         # Apply state updates
         for idx in newly_infected:
@@ -368,7 +392,14 @@ class SimulationEngine:
             threat_level_pct=threat_pct,
             escalation_factor=escalation_factor,
             sim_time_seconds=self.step_counter,
+            events=step_events[:15],  # Limit log size for UI readability
         )
 
         self._record_snapshot(graph, telemetry)
         return telemetry
+
+    def msf_attack_triggered(self, inf_idx: int, graph: NetworkGraph, effective_inf_rate: float) -> bool:
+        """Triggers probabilistic Metasploit pivoting events during infected states."""
+        if random.random() < (effective_inf_rate * 0.25):
+            return True
+        return False
