@@ -91,6 +91,10 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.active_node_type = "PC"
         self.graph: Optional[NetworkGraph] = None
         self.selected_node_idx: Optional[int] = None
+        self.flashing_node_idx: Optional[int] = None
+        self.flash_state: bool = False
+        self.flash_timer_id = None
+
         self.node_select_callback = None
         self.colorblind_mode: bool = False
 
@@ -130,6 +134,31 @@ class NetworkCanvas(ctk.CTkCanvas):
     def set_node_select_callback(self, callback):
         """Registers a callback function invoked when a node is selected in SELECT mode."""
         self.node_select_callback = callback
+
+    def flash_target_node(self, node_idx: int, pulses: int = 6):
+        """Flashes a target ring animation around the specified node upon attack/exploit."""
+        if not self.graph or node_idx < 0 or node_idx >= len(self.graph.nodes):
+            return
+
+        if self.flash_timer_id is not None:
+            self.after_cancel(self.flash_timer_id)
+            self.flash_timer_id = None
+
+        self.flashing_node_idx = node_idx
+        self.flash_state = True
+        
+        def _pulse_step(count):
+            if count <= 0 or self.flashing_node_idx is None:
+                self.flashing_node_idx = None
+                self.flash_state = False
+                self.render()
+                return
+
+            self.flash_state = not self.flash_state
+            self.render()
+            self.flash_timer_id = self.after(120, lambda: _pulse_step(count - 1))
+
+        _pulse_step(pulses)
 
     # ------------------------------------------------------------------
     # Viewport Coordinate Mapping
@@ -197,6 +226,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.zoom_factor = 1.0
         self.pan_offset_x = 0.0
         self.pan_offset_y = 0.0
+        self.selected_node_idx = None
         self.render()
 
     def _get_node_at_pos(
@@ -259,6 +289,10 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         clicked_idx = self._get_node_at_pos(world_x, world_y)
 
+        # Record active selection index for Clippy or tools
+        if clicked_idx is not None:
+            self.selected_node_idx = clicked_idx
+
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
                 self.graph.add_node(
@@ -288,6 +322,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 self.selected_node_idx = clicked_idx
                 if callable(self.node_select_callback):
                     self.node_select_callback(clicked_idx)
+            self.render()
 
     def _on_drag(self, event):
         world_x, world_y = self.screen_to_world(event.x, event.y)
@@ -445,6 +480,17 @@ class NetworkCanvas(ctk.CTkCanvas):
             )
             radius = int((type_cfg.radius if type_cfg else 14) * zf)
 
+            # High contrast attack flash animation overlay
+            if i == self.flashing_node_idx and self.flash_state:
+                self.create_oval(
+                    sx - radius - int(12 * zf),
+                    sy - radius - int(12 * zf),
+                    sx + radius + int(12 * zf),
+                    sy + radius + int(12 * zf),
+                    outline="#FF1744",
+                    width=max(2, int(4 * zf)),
+                )
+
             if node.is_patient_zero:
                 p0_color = "#D55E00" if self.colorblind_mode else "#ff3b3b"
                 self.create_oval(
@@ -474,14 +520,14 @@ class NetworkCanvas(ctk.CTkCanvas):
                     outline="#FFD54F",
                     width=max(1, int(3 * zf)),
                 )
-            elif self.mode == "SELECT" and i == self.selected_node_idx:
+            elif i == self.selected_node_idx:
                 self.create_oval(
                     sx - radius - int(4 * zf),
                     sy - radius - int(4 * zf),
                     sx + radius + int(4 * zf),
                     sy + radius + int(4 * zf),
-                    outline="#333333",
-                    width=max(1, int(2 * zf)),
+                    outline="#3B82F6",
+                    width=max(1, int(3 * zf)),
                 )
 
             sprite_size = max(16, int(32 * zf))
@@ -547,6 +593,15 @@ class CanvasView(ctk.CTkFrame):
             command=self.trigger_export
         )
         self.export_button.pack(pady=10)
+
+    @property
+    def selected_node_idx(self) -> Optional[int]:
+        """Provides direct access to selected node index on inner canvas."""
+        return self.canvas.selected_node_idx
+
+    def flash_target_node(self, node_idx: int):
+        """Delegates node flash animation trigger to inner canvas."""
+        self.canvas.flash_target_node(node_idx)
 
     def trigger_export(self):
         try:

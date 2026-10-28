@@ -1,10 +1,3 @@
-"""
-threat_modules.py - Adaptive AI Outbreak & Threat Simulator
-Contains advanced threat modules:
-1. MetasploitAttack - Handles exploit/payload separation and lateral network pivoting.
-2. GeraldTheSlightFrayer - Mock rainbow table/hash lookup module for fast credential cracking.
-"""
-
 import time
 from typing import List, Dict, Optional, Any
 
