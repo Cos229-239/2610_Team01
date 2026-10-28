@@ -5,7 +5,7 @@ import customtkinter as ctk
 HELP_TOPICS = [
     (
         "👋 Welcome!",
-        "I'm your AI assistant! Ask me any question about managing network outbreaks and firewalls.",
+        "I'm your AI assistant! Ask me any question about managing network outbreaks, firewalls, or running exploits.",
     ),
     (
         "🎯 Infect",
@@ -28,8 +28,8 @@ HELP_TOPICS = [
         "As the AI infects more nodes, its Botnet Power scales up to 100x, cracking simple keys almost instantly!",
     ),
     (
-        "🔍 Camera Controls",
-        "Use the mouse wheel to zoom in/out, or click and drag the canvas background to pan around the topology.",
+        "🐉 Metasploit & Gerald",
+        "Type 'exploit node 1' to run Metasploit, or 'run gerald' to instantly breach active firewalls using rainbow tables!",
     ),
     (
         "⏮️ Time Travel",
@@ -240,8 +240,11 @@ class ClippyAssistant(ctk.CTkToplevel):
             pass
 
     def _generate_response(self, query: str) -> str:
-        """Parses query keywords and inspects live simulation telemetry for context-aware responses."""
-        q = query.lower()
+        """Parses user input to trigger app controls, live telemetry, and Metasploit/Gerald threat execution."""
+        q = query.lower().strip()
+
+        # Dynamically fetch current graph instance from main application window
+        current_graph = getattr(self.parent, "graph", self.graph)
 
         telemetry = None
         if self.sim_engine and getattr(self.sim_engine, "history", None):
@@ -249,11 +252,112 @@ class ClippyAssistant(ctk.CTkToplevel):
                 telemetry = self.sim_engine.history[self.sim_engine.history_index].telemetry
 
         # -------------------------------------------------------------
-        # LIVE TELEMETRY QUERIES
+        # 1. METASPLOIT ATTACK COMMANDS
         # -------------------------------------------------------------
-        if "infected" in q or "status" in q or "how many" in q or "state" in q or "outbreak" in q:
+        if "metasploit" in q or "exploit" in q or "payload" in q:
+            if not current_graph or not getattr(current_graph, "nodes", None):
+                return "No canvas topology found! Select or place a network topology on the canvas first."
+
+            net_canvas = getattr(self.parent, "net_canvas", None)
+
+            # Check if user explicitly typed a number (e.g. "exploit node 3")
+            target_idx = None
+            for word in q.split():
+                if word.isdigit():
+                    target_idx = int(word)
+                    break
+
+            # Fallback 1: Use selected node index from canvas click
+            if target_idx is None and net_canvas:
+                target_idx = getattr(net_canvas, "selected_node_idx", None)
+
+            # Fallback 2: Default to node 0
+            if target_idx is None:
+                target_idx = 0
+
+            if 0 <= target_idx < len(current_graph.nodes):
+                target_node = current_graph.nodes[target_idx]
+                
+                msf = getattr(self.sim_engine, "msf_module", None)
+                if not msf:
+                    from core.threat_modules import MetasploitAttack
+                    msf = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=60)
+
+                source = current_graph.nodes[0] if current_graph.nodes else target_node
+                msf.execute(source_node=source, target_node=target_node)
+                
+                target_node.status = "INFECTED"
+
+                # Trigger canvas flash animation & rerender
+                if net_canvas:
+                    if hasattr(net_canvas, "flash_target_node"):
+                        net_canvas.flash_target_node(target_idx)
+                    else:
+                        net_canvas.render()
+
+                return f"🐉 [Metasploit] Executed payload against Node {target_idx}! Status set to INFECTED."
+            
+            return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
+
+        # -------------------------------------------------------------
+        # 2. GERALD THE SLIGHT FRAYER (RAINBOW TABLE LOOKUP)
+        # -------------------------------------------------------------
+        elif "gerald" in q or "frayer" in q or "rainbow" in q or "crack" in q:
+            if not current_graph or not getattr(current_graph, "edges", None):
+                return "No canvas topology found! Load a network scenario first."
+
+            cracked_count = 0
+            for edge in current_graph.edges:
+                if getattr(edge, "is_firewall", False):
+                    edge.is_firewall = False
+                    edge.crack_progress = 1.0
+                    edge.status = "INFECTED"
+                    cracked_count += 1
+
+            if hasattr(self.parent, "net_canvas"):
+                self.parent.net_canvas.render()
+
+            if cracked_count > 0:
+                return f"⚡ [Gerald the Slight Frayer] Instant Rainbow Table match! Cracked credentials across {cracked_count} firewall edge(s)."
+            return "⚡ [Gerald the Slight Frayer] Scanned network hashes, but all active firewalls are already breached or uninitialized."
+
+        # -------------------------------------------------------------
+        # 3. SIMULATION EXECUTION CONTROLS
+        # -------------------------------------------------------------
+        elif "start" in q or "run" in q or "play" in q or "go" in q:
+            if hasattr(self.parent, "play_sim"):
+                if getattr(self.parent, "is_running", False):
+                    return "▶ Simulation is already running!"
+                self.parent.play_sim()
+                return "🚀 Starting simulation! Watch the topology nodes for active breaches."
+            return "Unable to hook into simulation loop."
+
+        elif "pause" in q or "stop" in q or "freeze" in q:
+            if hasattr(self.parent, "pause_sim"):
+                if not getattr(self.parent, "is_running", False):
+                    return "⏸ Simulation is already paused."
+                self.parent.pause_sim()
+                return "⏸ Simulation paused."
+            return "Unable to hook into simulation loop."
+
+        elif "reset" in q or "restart" in q:
+            if hasattr(self.parent, "reset_sim"):
+                self.parent.reset_sim()
+                return "🔄 Simulation reset! All nodes restored to healthy states."
+            return "Unable to hook into simulation loop."
+
+        elif "clear" in q:
+            if hasattr(self.parent, "_clear_canvas"):
+                self.parent._clear_canvas()
+                return "🧹 Network canvas cleared."
+            return "Unable to clear canvas."
+
+        # -------------------------------------------------------------
+        # 4. LIVE TELEMETRY QUERIES
+        # -------------------------------------------------------------
+        elif "infected" in q or "status" in q or "how many" in q or "state" in q or "outbreak" in q:
             if not telemetry or telemetry.total_nodes == 0:
-                return "The simulation hasn't started yet! Add nodes to the canvas and press Play."
+                return "The simulation hasn't started yet! Type 'start' or press Play."
 
             pct = telemetry.threat_level_pct
             inf = telemetry.infected_nodes
@@ -267,11 +371,11 @@ class ClippyAssistant(ctk.CTkToplevel):
                 f"• Status: {telemetry.status}"
             )
 
-        elif "firewall" in q or "password" in q or "crack" in q:
-            if not self.graph:
+        elif "firewall" in q or "password" in q:
+            if not current_graph:
                 return "Click an edge line on the canvas to deploy a firewall!"
 
-            firewalls = [e for e in self.graph.edges if getattr(e, "is_firewall", False)]
+            firewalls = [e for e in current_graph.edges if getattr(e, "is_firewall", False)]
             if not firewalls:
                 return "There are no active firewalls on the network canvas. Click an edge line to deploy one!"
 
@@ -290,14 +394,10 @@ class ClippyAssistant(ctk.CTkToplevel):
             power = getattr(telemetry, "escalation_factor", 1.0) if telemetry else 1.0
             return f"⚡ Current Botnet Threat Power is running at {power:.2f}x strength!"
 
-        elif "reset" in q or "clear" in q:
-            return "Click 'Clear' to erase the canvas, or 'Reset' to return all nodes to healthy states."
-        elif "node" in q or "device" in q or "router" in q:
-            return "Use '+ Node' mode to place PCs, Routers, or Modems on the canvas."
         elif "hi" in q or "hello" in q or "hey" in q:
-            return "Greetings Commander! Type any question about active infections, firewall status, or botnet power."
+            return "Greetings Commander! Try commands like: 'start', 'pause', 'exploit node 1', or 'run gerald'."
         else:
-            return "I can inspect live telemetry! Try asking: 'How many nodes are infected?' or 'What is the firewall progress?'"
+            return "I can control the simulation! Try typing: 'start', 'pause', 'exploit node 2', 'run gerald', or 'status'."
 
     def next_tip(self):
         """Displays the next guided tip topic directly in the chat window."""
