@@ -70,34 +70,46 @@ class NetworkGraph:
 
     # Base network for this graph (third octet changes per topology)
     base_network: str = "192.168.1.0/24"
-    _next_host: int = 1           # next host number to hand out
+    _next_subnet: int = 1           # next host number to hand out
 
     @property
     def node_count(self) -> int:
         return len(self.nodes)
 
-    def _generate_ip(self) -> str:
-        """Return the next available IP in the current base_network."""
-        # base_network is expected as "A.B.C.0/24"
-        parts = self.base_network.split("/")[0].split(".")
-        if len(parts) != 4:
-            parts = ["192", "168", "1", "0"]
+    def _generate_unique_subnet_and_ip(self) -> tuple[str, str]:
+        """
+        Returns (ip_address, subnet) where every node gets a distinct / 24.
+        Example sequence:
+            192.168.1.10  ->  192.168.1.0/24
+            192.168.2.10  ->  192.168.2.0/24
+            192.168.3.10  ->  192.168.3.0/24
+            ...
+        """
 
-        # Simple sequential assignment (skips .0 and .255)
-        host = self._next_host
-        self._next_host += 1
-        if host >= 254:          # wrap if we somehow exceed a /24
-            host = 1
-            self._next_host = 2
+        # Allow the base_network to set the starting third octet if desired
+        try:
+            start_octet = int(self.base_network.split(".") [2])
+        except (IndexError, ValueError):
+            start_octet = 1
 
-        return f"{parts[0]}.{parts[1]}.{parts[2]}.{host}"
+        third = start_octet + self._next_subnet - 1
+        self._next_subnet += 1
+
+        # Keep third octet in valid range (1-254)
+        if third > 254:
+            third = ((third - 1) % 254) + 1
+
+        subnet = f"192.168.{third}.0/24"
+        ip     = f"192.168.{third}.10"   # .10 is a safe host address
+
+        return ip, subnet
 
     def add_node(self, x: float, y: float, node_type: str = "PC") -> Node:
         """Adds a new node with a specific device type at canvas coordinates."""
         node_id = f"{node_type[:2].upper()}-{len(self.nodes) + 1:02d}"
         is_first = len(self.nodes) == 0
 
-        ip = self._generate_ip()
+        ip, subnet = self._generate_unique_subnet_and_ip()
 
         new_node = Node(
             id=node_id,
@@ -107,7 +119,7 @@ class NetworkGraph:
             y=y,
             is_patient_zero=is_first,
             ip_address=ip,
-            subnet=self.base_network,
+            subnet=subnet,
         )
         self.nodes.append(new_node)
         return new_node
@@ -213,7 +225,7 @@ class NetworkGraph:
         """Clears all nodes and edges from the graph instance."""
         self.nodes.clear()
         self.edges.clear()
-        self._next_host = 1
+        self._next_subnet = 1
 
 
 class TopologyGenerator:
