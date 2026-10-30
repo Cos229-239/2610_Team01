@@ -277,12 +277,27 @@ class SimulationEngine:
 
         # Build Adjacency Map
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
+        cross_subnet_edges = set()
+        
         for edge in graph.edges:
+            if edge.u >= total_nodes or edge.v >= total_nodes:
+                continue
+
+            node_u = graph.nodes[edge.u]
+            node_v = graph.nodes[edge.v]
+            same_subnet = (getattr(node_u, "subnet", "") == getattr(node_v, "subnet", ""))
+
             if getattr(edge, "is_firewall", False):
                 continue
-            if edge.u < total_nodes and edge.v < total_nodes:
+
+            if same_subnet:
                 adj[edge.u].append(edge.v)
                 adj[edge.v].append(edge.u)
+            else:
+                adj[edge.u].append(edge.v)
+                adj[edge.v].append(edge.u)
+                cross_subnet_edges.add((edge.u, edge.v))
+                cross_subnet_edges.add((edge.v, edge.u))
 
         # -------------------------------------------------------------
         # PHASE A: INFECTION SPREAD
@@ -299,6 +314,7 @@ class SimulationEngine:
                     )
 
         newly_infected = set()
+        
         if attack_candidates:
             if ai_mode == "Strategic AI":
                 ranked_targets: List[Tuple[int, float]] = [
@@ -311,54 +327,67 @@ class SimulationEngine:
                     for t_idx in attack_candidates
                 ]
                 ranked_targets.sort(key=lambda x: x[1], reverse=True)
+
                 max_breaches = max(1, int(effective_inf_rate * (4 + int(escalation_factor * 0.1))))
-                best_target_idx, _ = ranked_targets[0]
-                best_node = graph.nodes[best_target_idx]
-                device_type = getattr(best_node, "node_type", "PC")
-                type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
-                type_mult = type_cfg.defense_multiplier if type_cfg else 1.0
-                attack_pressure = effective_inf_rate * (
-                    1.0 + 0.5 * attack_candidates[best_target_idx]
-                )
-                block_chance = max(
-                    0.05,
-                    min(
-                        0.85,
-                        (effective_def_power * 0.6 * type_mult)
-                        - (attack_pressure * 0.2),
-                    ),
-                )
-                if (
-                    random.random() < attack_pressure
-                    and random.random() >= block_chance
-                ):
-                    newly_infected.add(best_target_idx)
-                    step_events.append(f"Strategic AI: Successfully breached high-priority target Node {getattr(best_node, 'id', best_target_idx)}")
-                for target_idx, _ in ranked_targets[1:]:
+
+                for target_idx, _ in ranked_targets:
                     if len(newly_infected) >= max_breaches:
                         break
+
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
-                    t_block = min(0.90, effective_def_power * 0.7 * t_mult)
-                    if (
-                        random.random() < effective_inf_rate
-                        and random.random() >= t_block
-                    ):
+
+                    # Base pressure
+                    attack_pressure = effective_inf_rate * (
+                        1.0 + 0.5 * attack_candidates[target_idx]
+                    )
+
+                    # Apply subnet penalty
+                    is_cross = any(
+                        (src, target_idx) in cross_subnet_edges
+                        for src in currently_infected
+                    )
+                    if is_cross:
+                        attack_pressure *= 0.35  
+
+                    block_chance = max(
+                        0.05,
+                        min(
+                            0.85,
+                            (effective_def_power * 0.6 * t_mult) - (attack_pressure * 0.2),
+                        ),
+                    )
+
+                    if random.random() < attack_pressure and random.random() >= block_chance:
                         newly_infected.add(target_idx)
-            else:
-                for target_idx in attack_candidates:
-                    t_node = graph.nodes[target_idx]
-                    t_type = getattr(t_node, "node_type", "PC")
-                    t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
-                    t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
-                    block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
-                    if (
-                        random.random() < effective_inf_rate
-                        and random.random() >= block_chance
-                    ):
-                        newly_infected.add(target_idx)
+                        step_events.append(
+                            f"Strategic AI: Breached {'cross-subnet ' if is_cross else ''}"
+                        )
+
+                    else:
+                        # Uniform mode
+                        for target_idx in attack_candidates:
+                            t_node = graph.nodes[target_idx]
+                            t_type = getattr(t_node, "node_type", "PC")
+                            t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
+                            t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
+
+                            chance = effective_inf_rate
+
+                            # Apply subnet penalty
+                            is_cross = any(
+                                (src, target_idx) in cross_subnet_edges
+                                for src in currently_infected
+                            )
+                            if is_cross:
+                                chance *= 0.35 #   <- key line
+
+                            block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
+
+                            if random.random() < chance and random.random() >= block_chance:
+                                newly_infected.add(target_idx)
 
         # -------------------------------------------------------------
         # PHASE B: RETAKING & NEUTRALIZING INFECTED NODES
