@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import tkinter as tk
 from typing import Dict, Optional, Tuple
 
 # Add project root directory to sys.path to resolve 'utils'
@@ -201,8 +202,20 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def _start_pan(self, event):
-        self._pan_start_x = event.x - self.pan_offset_x
-        self._pan_start_y = event.y - self.pan_offset_y
+        """Right-click: show context menu if on a node, otherwise start panning."""
+        if not self.graph:
+            return
+
+        world_x, world_y = self.screen_to_world(event.x, event.y)
+        clicked_idx = self._get_node_at_pos(world_x, world_y)
+
+        if clicked_idx is not None:
+            # Right-clicked a node -> show context menu
+            self._show_node_context_menu(event, clicked_idx)
+        else:
+            # Right-clicked empty space -> start panning
+            self._pan_start_x = event.x - self.pan_offset_x
+            self._pan_start_y = event.y - self.pan_offset_y
 
     def _on_pan_drag(self, event):
         self.pan_offset_x = event.x - self._pan_start_x
@@ -276,6 +289,84 @@ class NetworkCanvas(ctk.CTkCanvas):
                 self.graph.toggle_firewall_at_index(edge_idx, custom_pwd=user_pwd)
             self.render()
 
+    def _show_node_context_menu(self, event, node_idx: int):
+        """Shows a right-click context for the selected node."""
+        if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
+            return
+
+        node = self.graph.nodes[node_idx]
+        self.selected_node_idx = node_idx
+        self.render()
+
+        menu = tk.Menu(self, tearoff=0)
+
+        menu.add_command(
+            label=f"EditIP / Subnet... ({node.id})",
+            command=lambda: self._edit_node_ip_dialog(node_idx)
+        )
+        menu.add_separator()
+
+        menu.add_command(
+            label="Set as Patient Zero",
+            command=lambda: self._context_set_patient_zero(node_idx)
+        )
+        menu.add_command(
+            label="Force Infect",
+            command=lambda: self._context_force_status(node_idx, "INFECTED")
+        )
+        menu.add_command(
+            label="Force Clean (Healthy)",
+            command=lambda: self._context_force_status(node_idx, "HEALTHY")
+        )
+        menu.add_separator()
+
+        menu.add_command(
+            label="Delete Node",
+            command=lambda: self._context_delete_node(node_idx)
+        )
+
+        # Show menu at mouse position
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _context_set_patient_zero(self, node_idx: int):
+        if self.graph:
+            self.graph.set_patient_zero(node_idx)
+            self.render()
+
+    def _context_force_status(self, node_idx: int, status: str):
+        if self.graph and 0 <= node_idx < len(self.graph.nodes):
+            node = self.graph.nodes[node_idx]
+            node.status = status
+            if status == "HEALTHY":
+                node.is_patient_zero = False
+            self.render()
+
+    def _context_delete_node(self, node_idx: int):
+        if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
+            return
+
+        # Remove all edges connected to this node
+        self.graph.edges = [
+            e for e in self.graph.edges
+            if e.u != node_idx and e.v != node_idx
+        ]
+
+        # Re-index the remaining edges
+        for e in self.graph.edges:
+            if e.u > node_idx:
+                e.u -= 1
+            if e.v > node_idx:
+                e.v -= 1
+
+        # Remove the node
+        del self.graph.nodes[node_idx]
+
+        self.selected_node_idx = None
+        self.render()
+            
     def _edit_node_ip_dialog(self, node_idx: int):
         """Opens a dialog to manually edit the IP address and subnet of a node."""
         if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
