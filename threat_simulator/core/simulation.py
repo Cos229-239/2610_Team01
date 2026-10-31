@@ -1,9 +1,3 @@
-"""
-core/simulation.py
--------------------
-Core simulation engine managing network tick processing, threat escalation,
-snapshots/telemetry, and manual threat execution (Metasploit, Gerald, DDoS).
-"""
 
 import random
 from copy import deepcopy
@@ -275,7 +269,7 @@ class SimulationEngine:
             if self.msf_attack_triggered(inf_idx, graph, effective_inf_rate):
                 step_events.append(f"Metasploit: Executed automated lateral pivot & SMB exploit from {node_id}")
 
-        # Build Adjacency Map
+        # Build Adjacency Map & Track Cross-Subnet Edge Boundaries
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         cross_subnet_edges = set()
         
@@ -290,12 +284,10 @@ class SimulationEngine:
             if getattr(edge, "is_firewall", False):
                 continue
 
-            if same_subnet:
-                adj[edge.u].append(edge.v)
-                adj[edge.v].append(edge.u)
-            else:
-                adj[edge.u].append(edge.v)
-                adj[edge.v].append(edge.u)
+            adj[edge.u].append(edge.v)
+            adj[edge.v].append(edge.u)
+
+            if not same_subnet:
                 cross_subnet_edges.add((edge.u, edge.v))
                 cross_subnet_edges.add((edge.v, edge.u))
 
@@ -339,18 +331,16 @@ class SimulationEngine:
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
 
-                    # Base pressure
                     attack_pressure = effective_inf_rate * (
                         1.0 + 0.5 * attack_candidates[target_idx]
                     )
 
-                    # Apply subnet penalty
                     is_cross = any(
                         (src, target_idx) in cross_subnet_edges
                         for src in currently_infected
                     )
                     if is_cross:
-                        attack_pressure *= 0.35  
+                        attack_pressure *= 0.35
 
                     block_chance = max(
                         0.05,
@@ -362,32 +352,36 @@ class SimulationEngine:
 
                     if random.random() < attack_pressure and random.random() >= block_chance:
                         newly_infected.add(target_idx)
+                        target_id = getattr(t_node, 'id', target_idx)
                         step_events.append(
-                            f"Strategic AI: Breached {'cross-subnet ' if is_cross else ''}"
+                            f"Strategic AI: Breached {'cross-subnet ' if is_cross else ''}target Node {target_id}"
                         )
 
-                    else:
-                        # Uniform mode
-                        for target_idx in attack_candidates:
-                            t_node = graph.nodes[target_idx]
-                            t_type = getattr(t_node, "node_type", "PC")
-                            t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
-                            t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
+            else:
+                # Uniform mode
+                for target_idx in attack_candidates:
+                    t_node = graph.nodes[target_idx]
+                    t_type = getattr(t_node, "node_type", "PC")
+                    t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
+                    t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
 
-                            chance = effective_inf_rate
+                    chance = effective_inf_rate
 
-                            # Apply subnet penalty
-                            is_cross = any(
-                                (src, target_idx) in cross_subnet_edges
-                                for src in currently_infected
-                            )
-                            if is_cross:
-                                chance *= 0.35 #   <- key line
+                    is_cross = any(
+                        (src, target_idx) in cross_subnet_edges
+                        for src in currently_infected
+                    )
+                    if is_cross:
+                        chance *= 0.35
 
-                            block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
+                    block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
 
-                            if random.random() < chance and random.random() >= block_chance:
-                                newly_infected.add(target_idx)
+                    if random.random() < chance and random.random() >= block_chance:
+                        newly_infected.add(target_idx)
+                        target_id = getattr(t_node, 'id', target_idx)
+                        step_events.append(
+                            f"Uniform AI: Breached {'cross-subnet ' if is_cross else ''}target Node {target_id}"
+                        )
 
         # -------------------------------------------------------------
         # PHASE B: RETAKING & NEUTRALIZING INFECTED NODES

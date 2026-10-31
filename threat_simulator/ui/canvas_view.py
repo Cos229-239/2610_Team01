@@ -148,7 +148,7 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         self.flashing_node_idx = node_idx
         self.flash_state = True
-        
+
         def _pulse_step(count):
             if count <= 0 or self.flashing_node_idx is None:
                 self.flashing_node_idx = None
@@ -210,10 +210,8 @@ class NetworkCanvas(ctk.CTkCanvas):
         clicked_idx = self._get_node_at_pos(world_x, world_y)
 
         if clicked_idx is not None:
-            # Right-clicked a node -> show context menu
             self._show_node_context_menu(event, clicked_idx)
         else:
-            # Right-clicked empty space -> start panning
             self._pan_start_x = event.x - self.pan_offset_x
             self._pan_start_y = event.y - self.pan_offset_y
 
@@ -290,7 +288,7 @@ class NetworkCanvas(ctk.CTkCanvas):
             self.render()
 
     def _show_node_context_menu(self, event, node_idx: int):
-        """Shows a right-click context for the selected node."""
+        """Shows a right-click context menu for the selected node."""
         if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
             return
 
@@ -301,7 +299,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         menu = tk.Menu(self, tearoff=0)
 
         menu.add_command(
-            label=f"EditIP / Subnet... ({node.id})",
+            label=f"Edit IP / Subnet... ({node.id})",
             command=lambda: self._edit_node_ip_dialog(node_idx)
         )
         menu.add_separator()
@@ -325,7 +323,6 @@ class NetworkCanvas(ctk.CTkCanvas):
             command=lambda: self._context_delete_node(node_idx)
         )
 
-        # Show menu at mouse position
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -348,25 +345,21 @@ class NetworkCanvas(ctk.CTkCanvas):
         if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
             return
 
-        # Remove all edges connected to this node
         self.graph.edges = [
             e for e in self.graph.edges
             if e.u != node_idx and e.v != node_idx
         ]
 
-        # Re-index the remaining edges
         for e in self.graph.edges:
             if e.u > node_idx:
                 e.u -= 1
             if e.v > node_idx:
                 e.v -= 1
 
-        # Remove the node
         del self.graph.nodes[node_idx]
-
         self.selected_node_idx = None
         self.render()
-            
+
     def _edit_node_ip_dialog(self, node_idx: int):
         """Opens a dialog to manually edit the IP address and subnet of a node."""
         if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
@@ -381,7 +374,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         dialog.transient(self.winfo_toplevel())
         dialog.grab_set()
 
-        # Center the dialog roughly
         dialog.update_idletasks()
         x = self.winfo_rootx() + 80
         y = self.winfo_rooty() + 80
@@ -389,13 +381,11 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         ctk.CTkLabel(dialog, text=f"Node: {node.id}", font=("Arial", 13, "bold")).pack(pady=(15, 8))
 
-        # IP Address
         ctk.CTkLabel(dialog, text="IP Address:").pack(anchor="w", padx=25)
         ip_entry = ctk.CTkEntry(dialog, width=260, placeholder_text="e.g. 192.168.10.5")
         ip_entry.pack(padx=25, pady=(0, 10))
         ip_entry.insert(0, node.ip_address or "")
 
-        # Subnet
         ctk.CTkLabel(dialog, text="Subnet:").pack(anchor="w", padx=25)
         subnet_entry = ctk.CTkEntry(dialog, width=260, placeholder_text="e.g. 192.168.10.0/24")
         subnet_entry.pack(padx=25, pady=(0, 15))
@@ -406,9 +396,8 @@ class NetworkCanvas(ctk.CTkCanvas):
             new_subnet = subnet_entry.get().strip()
 
             if not new_ip or not new_subnet:
-                return  # simple validation – both required
+                return
 
-            # Use the helper we added earlier
             self.graph.set_node_ip(node_idx, new_ip, new_subnet)
             self.render()
             dialog.destroy()
@@ -419,7 +408,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         ctk.CTkButton(btn_frame, text="Save", width=100, command=save).pack(side="left", padx=8)
         ctk.CTkButton(btn_frame, text="Cancel", width=100, fg_color="gray", command=dialog.destroy).pack(side="left", padx=8)
 
-        # Focus the IP field
         ip_entry.focus_set()
 
     def _on_click(self, event):
@@ -448,10 +436,7 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         clicked_idx = self._get_node_at_pos(world_x, world_y)
 
-        # Record active selection index for Clippy or tools
-        if clicked_idx is not None:
-            self.selected_node_idx = clicked_idx
-
+        # Mode Interaction Routing
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
                 self.graph.add_node(
@@ -462,14 +447,18 @@ class NetworkCanvas(ctk.CTkCanvas):
         elif self.mode == "CONNECT_EDGE":
             if clicked_idx is not None:
                 if self.selected_node_idx is None:
+                    # Select origin node
                     self.selected_node_idx = clicked_idx
-                else:
+                elif self.selected_node_idx != clicked_idx:
+                    # Connect origin to destination node
                     self.graph.add_edge(self.selected_node_idx, clicked_idx)
                     self.selected_node_idx = None
-                self.render()
+                else:
+                    # Clicking same node deselects
+                    self.selected_node_idx = None
             else:
                 self.selected_node_idx = None
-                self.render()
+            self.render()
 
         elif self.mode == "SET_ORIGIN":
             if clicked_idx is not None:
@@ -481,6 +470,8 @@ class NetworkCanvas(ctk.CTkCanvas):
                 self.selected_node_idx = clicked_idx
                 if callable(self.node_select_callback):
                     self.node_select_callback(clicked_idx)
+            else:
+                self.selected_node_idx = None
             self.render()
 
     def _on_drag(self, event):
@@ -533,7 +524,7 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         # 1. Render Edges & Firewall Security Barriers
         for index, edge in enumerate(self.graph.edges):
-            if edge.u < len(self.graph.nodes) and edge.v < len(self.graph.nodes):
+            if 0 <= edge.u < len(self.graph.nodes) and 0 <= edge.v < len(self.graph.nodes):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
                 s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
                 s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
@@ -616,7 +607,7 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         # 2. Render Connection Preview Line
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
-            if self.selected_node_idx < len(self.graph.nodes):
+            if 0 <= self.selected_node_idx < len(self.graph.nodes):
                 src = self.graph.nodes[self.selected_node_idx]
                 src_sx, src_sy = self.world_to_screen(src.x, src.y)
                 cur_sx, cur_sy = self.world_to_screen(self.mouse_x, self.mouse_y)
@@ -726,13 +717,17 @@ class NetworkCanvas(ctk.CTkCanvas):
                 font=("Courier", font_sz, "bold"),
             )
 
-            # IP address under the node name
+            # IP address & Subnet badge under the node name
             if getattr(node, "ip_address", ""):
                 ip_font_sz = max(5, int(7 * zf))
+                ip_text = f"{node.ip_address}"
+                if getattr(node, "subnet", ""):
+                    ip_text += f" ({node.subnet})"
+
                 self.create_text(
                     sx,
                     sy + int(32 * zf),
-                    text=node.ip_address,
+                    text=ip_text,
                     fill="#444444",
                     font=("Consolas", ip_font_sz),
                 )
