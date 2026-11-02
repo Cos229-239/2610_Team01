@@ -19,5 +19,12 @@
     "ARP": "#FFD54F",
     "TCP": "#29B6F6",
     "INFECT": "#FF1744"
+  },
+  "clippy": {
+    "window_bg": "#f4ecd8",
+    "bubble_bg": "#ffffff",
+    "text_color": "#222222",
+    "border_color": "#8b5a2b",
+    "avatar": "📎 Clippy"
   }
 }

@@ -36,13 +36,16 @@ class SimulatorApp(ctk.CTk):
 
         # Dynamic Theme Engine Manager
         self.theme_manager = ThemeManager()
-        self.current_theme_name = "Classic Beige"
+        
+        # Dynamically grab the first loaded theme name
+        theme_names = list(self.theme_manager.available_themes.keys())
+        self.current_theme_name = theme_names[0] if theme_names else "Classic Beige"
 
         self.settings = {
             "colorblind_mode": False,
             "dark_mode": False,
             "cyberpunk_mode": False,
-            "active_theme": "Classic Beige",
+            "active_theme": self.current_theme_name,
         }
 
         self._build_ui()
@@ -55,7 +58,7 @@ class SimulatorApp(ctk.CTk):
 
         self._on_level_change("Level 1: Ring Topology")
         
-        # Apply initial theme
+        # Apply initial theme to canvas and assistant
         self.select_json_theme(self.current_theme_name)
 
     # ------------------------------------------------------------------
@@ -373,7 +376,7 @@ class SimulatorApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def select_json_theme(self, theme_name: str):
-        """Applies chosen JSON theme data to the canvas view."""
+        """Applies chosen JSON theme data to the canvas view and assistant UI."""
         self.current_theme_name = theme_name
         self.settings["active_theme"] = theme_name
         theme_data = self.theme_manager.get_theme(theme_name)
@@ -382,7 +385,12 @@ class SimulatorApp(ctk.CTk):
             ctk.set_appearance_mode(theme_data["appearance_mode"])
             self.settings["dark_mode"] = (theme_data["appearance_mode"] == "Dark")
 
+        # Apply theme to canvas view
         self.net_canvas.apply_custom_theme(theme_data)
+
+        # Apply theme and custom avatar config to Clippy assistant
+        if hasattr(self, "assistant") and self.assistant:
+            self.assistant.apply_theme(theme_data)
 
     def reload_themes(self, dropdown_menu=None):
         """Rescans themes directory and refreshes dropdown options."""

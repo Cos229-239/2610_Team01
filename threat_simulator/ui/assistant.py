@@ -158,6 +158,40 @@ class ClippyAssistant(ctk.CTkToplevel):
         self._animate_idle()
 
     # ------------------------------------------------------------------
+    # Dynamic Theme Integration
+    # ------------------------------------------------------------------
+
+    def apply_theme(self, theme_data: dict):
+        """Applies JSON theme styling rules and custom avatars to the assistant window."""
+        clippy_cfg = theme_data.get("clippy", {
+            "window_bg": "#f4ecd8",
+            "bubble_bg": "#ffffff",
+            "text_color": "#222222",
+            "border_color": "#8b5a2b",
+            "avatar": "📎 Clippy Assistant"
+        })
+
+        # Configure window container backgrounds and borders
+        self.configure(fg_color=clippy_cfg.get("window_bg", "#f4ecd8"))
+        if hasattr(self, "container") and self.container.winfo_exists():
+            self.container.configure(
+                fg_color=clippy_cfg.get("window_bg", "#f4ecd8"),
+                border_color=clippy_cfg.get("border_color", "#3B82F6")
+            )
+
+        # Configure chat scroll frame background
+        if hasattr(self, "chat_scroll") and self.chat_scroll.winfo_exists():
+            self.chat_scroll.configure(fg_color=clippy_cfg.get("bubble_bg", "#ffffff"))
+
+        # Update text-based avatar label and title text color
+        avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
+        if hasattr(self, "avatar_label") and self.avatar_label.winfo_exists():
+            self.avatar_label.configure(
+                text=avatar_text,
+                text_color=clippy_cfg.get("text_color", "#3B82F6")
+            )
+
+    # ------------------------------------------------------------------
     # Focus & Input Handlers
     # ------------------------------------------------------------------
 
