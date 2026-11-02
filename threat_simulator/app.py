@@ -7,13 +7,14 @@ from ui.tooltip import ToolTip
 from ui.assistant import ClippyAssistant
 import tkinter as tk
 from tkinter import Menu
+from ui.pdu_controls import PDUControlPanel
 
 
 class SimulatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Adaptive AI Outbreak & Threat Simulator")
-        self.geometry("1150x700")
+        self.geometry("1150x820")
 
         self.sim_engine = SimulationEngine()
         self.graph = NetworkGraph()
@@ -90,7 +91,10 @@ class SimulatorApp(ctk.CTk):
         else:
             self.graph.clear()
 
+        # Update bindings to the active graph instance
         self.canvas_wrapper.set_graph(self.graph)
+        if hasattr(self, "pdu_controls") and hasattr(self.graph, "pdu_engine"):
+            self.pdu_controls.engine = self.graph.pdu_engine
 
     # ------------------------------------------------------------------
     # UI Layout Builder
@@ -146,7 +150,7 @@ class SimulatorApp(ctk.CTk):
         )
         self.device_menu = ctk.CTkOptionMenu(
             top_ctrl,
-            values=["PC", "Router", "Modem"],
+            values=["PC", "Router", "Modem", "Server", "Switch", "Firewall"],
             width=90,
             command=self._on_device_type_change,
         )
@@ -264,13 +268,21 @@ class SimulatorApp(ctk.CTk):
             row=2,
             column=0,
             padx=10,
-            pady=10,
+            pady=(10, 5),
             sticky="nsew"
         )
 
+        # Cisco Packet Tracer PDU Animation Control Panel
+        self.pdu_controls = PDUControlPanel(
+            parent=left_frame,
+            engine=getattr(self.graph, "pdu_engine", None),
+            on_tick_callback=self.net_canvas.render,
+        )
+        self.pdu_controls.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
+
         # Simulation & Threat Module Buttons Frame (Expanded for 6 Buttons)
         btn_frame = ctk.CTkFrame(left_frame)
-        btn_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+        btn_frame.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
         btn_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
 
         self.play_button = ctk.CTkButton(
@@ -571,6 +583,9 @@ class SimulatorApp(ctk.CTk):
         self.sim_engine.reset()
         self.telemetry_panel.clear()
         self.graph.reset_states()
+
+        if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
+            self.graph.pdu_engine.active_pdus.clear()
 
         p0_idx = self.graph.get_patient_zero_index() if self.graph.nodes else 0
 

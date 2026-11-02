@@ -4,6 +4,7 @@ import string
 from dataclasses import dataclass, field
 from typing import List, Optional
 from .node_types import NODE_TYPES
+from .pdu_engine import PDUSimulationEngine
 
 
 def calculate_password_search_space(password: str) -> int:
@@ -33,9 +34,9 @@ def calculate_password_search_space(password: str) -> int:
 
     # If password consists of characters outside predefined sets, fallback to minimum
     charset_size = max(charset_size, 10)  # Pure numeric minimum
-    
+
     # Combination space = N^L
-    return charset_size ** length
+    return charset_size**length
 
 
 @dataclass
@@ -47,8 +48,14 @@ class Node:
     y: float = 0.0
     is_patient_zero: bool = False
     infection_step: int = -1
-    ip_address: str = ""       # e.g. "192.168.10.5"
-    subnet: str = "192.168.1.0/24" # the network this node belongs to
+    ip_address: str = ""  # e.g. "192.168.10.5"
+    subnet: str = "192.168.1.0/24"  # the network this node belongs to
+    mac_address: str = ""  # Hardware MAC Address
+
+    def __post_init__(self):
+        if not self.mac_address:
+            hex_digits = [f"{random.randint(0, 255):02X}" for _ in range(3)]
+            self.mac_address = f"00:50:56:{':'.join(hex_digits)}"
 
 
 @dataclass
@@ -57,10 +64,10 @@ class Edge:
     v: int
     status: str = "HEALTHY"
     is_firewall: bool = False
-    password: str = ""             # Encryption key
-    crack_progress: float = 0.0     # Cracking percentage (0.0 to 1.0)
-    crack_attempts: int = 0         # Total brute-force tries attempted
-    required_attempts: int = 0      # Total combinations required to breach
+    password: str = ""  # Encryption key
+    crack_progress: float = 0.0  # Cracking percentage (0.0 to 1.0)
+    crack_attempts: int = 0  # Total brute-force tries attempted
+    required_attempts: int = 0  # Total combinations required to breach
 
 
 @dataclass
@@ -70,55 +77,59 @@ class NetworkGraph:
 
     # Base network for this graph (third octet changes per topology)
     base_network: str = "192.168.1.0/24"
-    _next_subnet: int = 1           # next host number to hand out
+    _next_subnet: int = 1  # next host number to hand out
+    pdu_engine: Optional[PDUSimulationEngine] = None
+
+    def __post_init__(self):
+        if self.pdu_engine is None:
+            self.pdu_engine = PDUSimulationEngine(graph=self)
 
     @property
     def node_count(self) -> int:
         return len(self.nodes)
 
     def _generate_unique_subnet_and_ip(self) -> tuple[str, str]:
-        """
-        Returns (ip_address, subnet) where every node gets a distinct / 24.
+        """Returns (ip_address, subnet) where every node gets a distinct / 24.
         Example sequence:
             192.168.1.10  ->  192.168.1.0/24
             192.168.2.10  ->  192.168.2.0/24
             192.168.3.10  ->  192.168.3.0/24
             ...
         """
-
-        # Allow the base_network to set the starting third octet if desired
         try:
-            start_octet = int(self.base_network.split(".") [2])
+            start_octet = int(self.base_network.split(".")[2])
         except (IndexError, ValueError):
             start_octet = 1
 
         third = start_octet + self._next_subnet - 1
         self._next_subnet += 1
 
-        # Keep third octet in valid range (1-254)
         if third > 254:
             third = ((third - 1) % 254) + 1
 
         subnet = f"192.168.{third}.0/24"
-        ip     = f"192.168.{third}.10"   # .10 is a safe host address
+        ip = f"192.168.{third}.10"  # .10 is a safe host address
 
         return ip, subnet
 
-    def add_node(self, x: float, y: float, node_type: str = "PC", ip_address: Optional[str] = None, subnet: Optional[str] = None,) -> Node:
+    def add_node(
+        self,
+        x: float,
+        y: float,
+        node_type: str = "PC",
+        ip_address: Optional[str] = None,
+        subnet: Optional[str] = None,
+    ) -> Node:
         """Adds a new node with a specific device type at canvas coordinates."""
         node_id = f"{node_type[:2].upper()}-{len(self.nodes) + 1:02d}"
         is_first = len(self.nodes) == 0
 
         if ip_address is None or subnet is None:
-            # Automatic unique subnet mode
             auto_ip, auto_subnet = self._generate_unique_subnet_and_ip()
             ip_address = ip_address or auto_ip
             subnet = subnet or auto_subnet
         else:
-            # Manual mode - still advance the counter so future auto nodes stay unique
-            self._netd_subnet += 1
-
-        # ip, subnet = self._generate_unique_subnet_and_ip()
+            self._next_subnet += 1  # Fixed typo: _netd_subnet -> _next_subnet
 
         new_node = Node(
             id=node_id,
@@ -138,9 +149,8 @@ class NetworkGraph:
         node_index: int,
         ip_address: str,
         subnet: str,
-        ) -> bool:
-        """
-        Manually set (or change) the IP address and subnet of an existing node.
+    ) -> bool:
+        """Manually set (or change) the IP address and subnet of an existing node.
 
         Returns True on success, False if the index is invalid.
         """
@@ -224,7 +234,7 @@ class NetworkGraph:
                 if custom_pwd and custom_pwd.strip():
                     edge.password = custom_pwd.strip()[:6]
                 else:
-                    edge.password = "".join(random.choices("0123456789", k=3))  # Default short numeric key
+                    edge.password = "".join(random.choices("0123456789", k=3))
 
                 edge.required_attempts = calculate_password_search_space(edge.password)
             else:
@@ -282,7 +292,7 @@ class TopologyGenerator:
     def generate_mesh(num_nodes: int = 24) -> NetworkGraph:
         graph = NetworkGraph(base_network="192.168.20.0/24")
         types = ["Router", "PC", "Modem", "PC"]
-        
+
         for i in range(num_nodes):
             node = graph.add_node(0, 0, node_type=types[i % len(types)])
             node.id = f"MS-{i+1:02d}"
