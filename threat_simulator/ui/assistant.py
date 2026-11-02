@@ -5,23 +5,27 @@ import customtkinter as ctk
 HELP_TOPICS = [
     (
         "👋 Welcome!",
-        "I'm your AI assistant! Ask me any question about managing network outbreaks, firewalls, or running exploits.",
+        "I'm your AI assistant! Ask me any question about managing network outbreaks, firewalls, running exploits, or Cisco CLI/PDU networking.",
     ),
     (
-        "🎯 Infect",
-        "Click any node to toggle 'Patient Zero'. This is where infections originate during simulation!",
+        "📦 Packet Tracer & PDUs",
+        "Packets move as discrete PDU frames across edge lines. Press '▶ Play' or '⏭ Step' to view animated ICMP (Green), ARP (Amber), or INFECT (Red) envelopes!",
     ),
     (
-        "+Node",
-        "Click the drop down to select the node type, and click on canvas to place the node.",
+        "💻 Cisco IOS Terminal",
+        "Double-click any node to launch its CLI window! Execute 'ping <ip>' to spawn live ICMP PDU envelopes across the canvas.",
     ),
     (
-        "+Edge",
-        "Click on one node, then another to connect them via an edge line.",
+        "🎯 Infect & Outbreaks",
+        "Click any node to toggle 'Patient Zero'. Press '☣️ Launch Attack' to enqueue initial INFECT PDUs. Toggle 'Auto-Spread' to control automatic propagation!",
+    ),
+    (
+        "+Node & +Edge",
+        "Select device types (PC, Router, Switch, Firewall) from the dropdown and click the canvas to place nodes or connect them via edges.",
     ),
     (
         "🛡️ Active Firewalls",
-        "Click on any network edge to deploy a firewall! Enter encryption keys to slow down brute-force attacks.",
+        "Click on any edge to deploy a firewall! Set encryption keys to slow down brute-force attacks.",
     ),
     (
         "⚡ Botnet Scaling",
@@ -241,9 +245,30 @@ class ClippyAssistant(ctk.CTkToplevel):
                 telemetry = self.sim_engine.history[self.sim_engine.history_index].telemetry
 
         # -------------------------------------------------------------
-        # 1. METASPLOIT ATTACK COMMANDS
+        # 1. NETWORKING, PDU & CISCO CLI QUERIES
         # -------------------------------------------------------------
-        if "metasploit" in q or "exploit" in q or "payload" in q:
+        if "pdu" in q or "packet" in q or "tracer" in q or "network" in q:
+            return (
+                "📦 PDU Networking Engine:\n"
+                "• Packets (ICMP, ARP, INFECT) move linearly across edges via a progress factor (0.0 to 1.0).\n"
+                "• Green badges = ICMP Echo Request\n"
+                "• Amber badges = Return ARP Response\n"
+                "• Red badges = INFECT Attack Frames\n"
+                "Use the PDU control bar below the canvas to Play, Pause, or Step through packet ticks!"
+            )
+
+        elif "cli" in q or "terminal" in q or "ping" in q or "cisco" in q or "ios" in q:
+            return (
+                "💻 Cisco IOS Terminal Mode:\n"
+                "• Double-click any node to launch its terminal popup!\n"
+                "• Type 'ping <target_ip>' (e.g., ping 192.168.1.10) to spawn animated ICMP frames.\n"
+                "• Type 'show ip interface brief' or 'show ip route' to inspect device IP tables."
+            )
+
+        # -------------------------------------------------------------
+        # 2. METASPLOIT ATTACK COMMANDS
+        # -------------------------------------------------------------
+        elif "metasploit" in q or "exploit" in q or "payload" in q:
             if not current_graph or not getattr(current_graph, "nodes", None):
                 return "No canvas topology found! Select or place a network topology on the canvas first."
 
@@ -284,7 +309,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
 
         # -------------------------------------------------------------
-        # 2. VOLUMETRIC DDOS FLOOD COMMANDS
+        # 3. VOLUMETRIC DDOS FLOOD COMMANDS
         # -------------------------------------------------------------
         elif "ddos" in q or "flood" in q or "dos" in q:
             if not current_graph or not getattr(current_graph, "nodes", None):
@@ -325,7 +350,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
 
         # -------------------------------------------------------------
-        # 3. GERALD THE SLIGHT FRAYER (RAINBOW TABLE LOOKUP)
+        # 4. GERALD THE SLIGHT FRAYER (RAINBOW TABLE LOOKUP)
         # -------------------------------------------------------------
         elif "gerald" in q or "frayer" in q or "rainbow" in q or "crack" in q:
             if not current_graph or not getattr(current_graph, "edges", None):
@@ -347,7 +372,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             return "⚡ [Gerald the Slight Frayer] Scanned network hashes, but all active firewalls are already breached or uninitialized."
 
         # -------------------------------------------------------------
-        # 4. SIMULATION EXECUTION CONTROLS
+        # 5. SIMULATION EXECUTION CONTROLS
         # -------------------------------------------------------------
         elif "start" in q or "run" in q or "play" in q or "go" in q:
             if hasattr(self.parent, "play_sim"):
@@ -378,7 +403,7 @@ class ClippyAssistant(ctk.CTkToplevel):
             return "Unable to clear canvas."
 
         # -------------------------------------------------------------
-        # 5. LIVE TELEMETRY QUERIES
+        # 6. LIVE TELEMETRY QUERIES
         # -------------------------------------------------------------
         elif "infected" in q or "status" in q or "how many" in q or "state" in q or "outbreak" in q:
             if not telemetry or telemetry.total_nodes == 0:
@@ -420,9 +445,9 @@ class ClippyAssistant(ctk.CTkToplevel):
             return f"⚡ Current Botnet Threat Power is running at {power:.2f}x strength!"
 
         elif "hi" in q or "hello" in q or "hey" in q:
-            return "Greetings Commander! Try typing: 'exploit', 'ddos', 'run gerald', 'start', or 'pause'."
+            return "Greetings Commander! Ask me about 'networking', 'pdu', 'cli', 'exploit', 'ddos', 'start', or 'pause'."
         else:
-            return "I can control the simulation! Try typing: 'exploit', 'ddos', 'run gerald', 'start', 'pause', or 'status'."
+            return "I can control the simulation and explain networking! Ask about: 'pdu', 'cli', 'networking', 'exploit', 'ddos', 'start', or 'pause'."
 
     def next_tip(self):
         self.topic_index = (self.topic_index + 1) % len(HELP_TOPICS)
