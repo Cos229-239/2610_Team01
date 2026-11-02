@@ -1,0 +1,23 @@
+{
+  "$schema": "./theme_schema.json",
+  "name": "Classic Beige",
+  "author": "System",
+  "appearance_mode": "Light",
+  "canvas_bg": "#d8ccb0",
+  "status_colors": {
+    "HEALTHY": "#69F0AE",
+    "WARNING": "#FFB74D",
+    "INFECTED": "#FF5252"
+  },
+  "edge_colors": {
+    "HEALTHY": "#8b5a2b",
+    "WARNING": "#FFB74D",
+    "INFECTED": "#FF5252"
+  },
+  "pdu_colors": {
+    "ICMP": "#00E676",
+    "ARP": "#FFD54F",
+    "TCP": "#29B6F6",
+    "INFECT": "#FF1744"
+  }
+}

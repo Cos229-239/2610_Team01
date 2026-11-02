@@ -19,7 +19,7 @@ from PIL import Image, ImageTk
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
 
-# Standard Palette (Red / Amber / Green)
+# Default Standard Palette (Red / Amber / Green)
 STATUS_COLORS_STD = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
@@ -43,6 +43,13 @@ EDGE_COLORS_CB = {
     "INFECTED": "#D55E00",
     "WARNING": "#E69F00",
     "HEALTHY": "#0072B2",
+}
+
+PDU_COLORS_STD = {
+    "ICMP": "#00E676",
+    "ARP": "#FFD54F",
+    "TCP": "#29B6F6",
+    "INFECT": "#FF1744",
 }
 
 
@@ -102,6 +109,11 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.node_select_callback = None
         self.colorblind_mode: bool = False
 
+        # Active Theme Color Maps
+        self.status_colors = STATUS_COLORS_STD.copy()
+        self.edge_colors = EDGE_COLORS_STD.copy()
+        self.pdu_colors = PDU_COLORS_STD.copy()
+
         # Viewport Transformations (Zoom & Pan)
         self.zoom_factor: float = 1.0
         self.pan_offset_x: float = 0.0
@@ -131,9 +143,26 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         self.sprite_manager = AssetManager()
 
+    def apply_custom_theme(self, theme_data: dict):
+        """Applies loaded JSON theme palette dynamically to canvas elements."""
+        self.configure(bg=theme_data.get("canvas_bg", "#d8ccb0"))
+        if "status_colors" in theme_data:
+            self.status_colors = theme_data["status_colors"]
+        if "edge_colors" in theme_data:
+            self.edge_colors = theme_data["edge_colors"]
+        if "pdu_colors" in theme_data:
+            self.pdu_colors = theme_data["pdu_colors"]
+        self.render()
+
     def set_colorblind_mode(self, enabled: bool):
         """Toggles colorblind-friendly rendering palette on canvas."""
         self.colorblind_mode = bool(enabled)
+        if self.colorblind_mode:
+            self.status_colors = STATUS_COLORS_CB.copy()
+            self.edge_colors = EDGE_COLORS_CB.copy()
+        else:
+            self.status_colors = STATUS_COLORS_STD.copy()
+            self.edge_colors = EDGE_COLORS_STD.copy()
         self.render()
 
     def set_node_select_callback(self, callback):
@@ -635,13 +664,7 @@ class NetworkCanvas(ctk.CTkCanvas):
             px = s_src_x + (s_dst_x - s_src_x) * pdu.progress
             py = s_src_y + (s_dst_y - s_src_y) * pdu.progress
 
-            colors = {
-                "ICMP": "#00E676",
-                "ARP": "#FFD54F",
-                "TCP": "#29B6F6",
-                "INFECT": "#FF1744",
-            }
-            pdu_color = colors.get(pdu.protocol, "#FFFFFF")
+            pdu_color = self.pdu_colors.get(pdu.protocol, "#FFFFFF")
 
             badge_sz = max(6, int(10 * zf))
             self.create_rectangle(
@@ -669,7 +692,6 @@ class NetworkCanvas(ctk.CTkCanvas):
             return
 
         zf = self.zoom_factor
-        edge_palette = EDGE_COLORS_CB if self.colorblind_mode else EDGE_COLORS_STD
 
         # 1. Render Edges & Firewall Security Barriers
         for index, edge in enumerate(self.graph.edges):
@@ -760,7 +782,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                         font=("Arial", max(7, int(9 * zf))),
                     )
                 else:
-                    edge_color = edge_palette.get(edge.status, "#444444")
+                    edge_color = self.edge_colors.get(edge.status, "#444444")
                     edge_width = max(
                         1, int((2 if edge.status != "HEALTHY" else 1) * zf)
                     )
@@ -808,7 +830,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
             if node.is_patient_zero:
-                p0_color = "#D55E00" if self.colorblind_mode else "#ff3b3b"
+                p0_color = self.status_colors.get("INFECTED", "#ff3b3b")
                 self.create_oval(
                     sx - int(32 * zf),
                     sy - int(32 * zf),
@@ -906,6 +928,29 @@ class NetworkCanvas(ctk.CTkCanvas):
                     text=ip_text,
                     fill="#444444",
                     font=("Consolas", ip_font_sz),
+                )
+
+            # 5. Render Infection Step Badge if Infected
+            step_val = getattr(node, "infection_step", -1)
+            if node.status == "INFECTED" and step_val >= 0:
+                badge_radius = max(7, int(10 * zf))
+                bx = sx + radius + int(4 * zf)
+                by = sy - radius - int(4 * zf)
+                self.create_oval(
+                    bx - badge_radius,
+                    by - badge_radius,
+                    bx + badge_radius,
+                    by + badge_radius,
+                    fill="#D32F2F",
+                    outline="#FFFFFF",
+                    width=1,
+                )
+                self.create_text(
+                    bx,
+                    by,
+                    text=str(step_val),
+                    fill="#FFFFFF",
+                    font=("Arial", max(6, int(7 * zf)), "bold"),
                 )
 
 

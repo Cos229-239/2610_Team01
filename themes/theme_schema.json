@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ThreatSimulatorTheme",
+  "description": "JSON Schema for Threat Simulator custom UI color palettes",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Display name of the theme."
+    },
+    "author": {
+      "type": "string",
+      "description": "Name of the theme creator."
+    },
+    "appearance_mode": {
+      "type": "string",
+      "enum": [ "Dark", "Light" ],
+      "description": "Base CustomTkinter appearance mode."
+    },
+    "canvas_bg": {
+      "type": "string",
+      "pattern": "^#([A-Fa-f0-9]{6})$",
+      "description": "Hex color string for the canvas background (e.g. #0D1117)."
+    },
+    "status_colors": {
+      "type": "object",
+      "description": "Node status color indicators",
+      "properties": {
+        "HEALTHY": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "WARNING": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "INFECTED": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        }
+      },
+      "required": [ "HEALTHY", "WARNING", "INFECTED" ]
+    },
+    "edge_colors": {
+      "type": "object",
+      "description": "Network connection line colors",
+      "properties": {
+        "HEALTHY": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "WARNING": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "INFECTED": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        }
+      },
+      "required": [ "HEALTHY", "WARNING", "INFECTED" ]
+    },
+    "pdu_colors": {
+      "type": "object",
+      "description": "PDU frame envelope colors",
+      "properties": {
+        "ICMP": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "ARP": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "TCP": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        },
+        "INFECT": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{6})$"
+        }
+      }
+    }
+  },
+  "required": [ "name", "appearance_mode", "canvas_bg", "status_colors", "edge_colors" ]
+}
