@@ -25,6 +25,6 @@
     "bubble_bg": "#ffffff",
     "text_color": "#222222",
     "border_color": "#8b5a2b",
-    "avatar": "📎 Clippy"
+    "avatar_icon": "assets/clippyOG.png"
   }
 }

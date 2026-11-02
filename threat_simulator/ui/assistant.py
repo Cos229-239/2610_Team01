@@ -1,4 +1,6 @@
 import math
+import os
+from PIL import Image
 import customtkinter as ctk
 
 # Outbreak Simulation Guided Tips
@@ -79,16 +81,17 @@ class ClippyAssistant(ctk.CTkToplevel):
 
         # Header Control Bar (Row 0)
         self.header_frame = ctk.CTkFrame(
-            self.container, fg_color="transparent", height=28, cursor="fleur"
+            self.container, fg_color="transparent", height=36, cursor="fleur"
         )
-        self.header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 2))
+        self.header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         self.header_frame.bind("<Button-1>", self._start_drag)
         self.header_frame.bind("<B1-Motion>", self._on_drag)
 
+        # Enlarged Avatar / Header Label
         self.avatar_label = ctk.CTkLabel(
             self.header_frame,
             text="📎 Clippy Assistant",
-            font=("Arial", 12, "bold"),
+            font=("Arial", 16, "bold"),
             text_color="#3B82F6",
             cursor="fleur",
         )
@@ -99,8 +102,8 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.btn_close = ctk.CTkButton(
             self.header_frame,
             text="✕",
-            width=22,
-            height=22,
+            width=24,
+            height=24,
             fg_color="#FF5252",
             hover_color="#D32F2F",
             command=self.hide,
@@ -110,8 +113,8 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.btn_next = ctk.CTkButton(
             self.header_frame,
             text="Tip ▶",
-            width=45,
-            height=22,
+            width=50,
+            height=24,
             font=("Arial", 10, "bold"),
             command=self.next_tip,
         )
@@ -125,12 +128,12 @@ class ClippyAssistant(ctk.CTkToplevel):
 
         # Input Row (Row 2 - Fixed Bottom)
         self.input_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.input_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(2, 6))
+        self.input_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(4, 8))
 
         self.entry_box = ctk.CTkEntry(
             self.input_frame,
             placeholder_text="Type a message...",
-            height=28,
+            height=30,
             font=("Arial", 11),
         )
         self.entry_box.pack(side="left", fill="x", expand=True, padx=(0, 4))
@@ -140,8 +143,8 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.btn_send = ctk.CTkButton(
             self.input_frame,
             text="Send",
-            width=50,
-            height=28,
+            width=55,
+            height=30,
             font=("Arial", 10, "bold"),
             command=self.send_message,
         )
@@ -183,13 +186,29 @@ class ClippyAssistant(ctk.CTkToplevel):
         if hasattr(self, "chat_scroll") and self.chat_scroll.winfo_exists():
             self.chat_scroll.configure(fg_color=clippy_cfg.get("bubble_bg", "#ffffff"))
 
-        # Update text-based avatar label and title text color
-        avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
+        # Update text or custom PNG image icon for the avatar label
         if hasattr(self, "avatar_label") and self.avatar_label.winfo_exists():
-            self.avatar_label.configure(
-                text=avatar_text,
-                text_color=clippy_cfg.get("text_color", "#3B82F6")
-            )
+            text_color = clippy_cfg.get("text_color", "#3B82F6")
+            icon_path = clippy_cfg.get("avatar_icon", None)
+            
+            if icon_path and os.path.exists(icon_path):
+                try:
+                    pil_image = Image.open(icon_path)
+                    self.avatar_ctk_img = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(28, 28))
+                    avatar_text = clippy_cfg.get("avatar", " Clippy Assistant")
+                    self.avatar_label.configure(
+                        text=avatar_text,
+                        image=self.avatar_ctk_img,
+                        compound="left",
+                        text_color=text_color
+                    )
+                except Exception as e:
+                    print(f"[ClippyAssistant] Error loading avatar icon '{icon_path}': {e}")
+                    avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
+                    self.avatar_label.configure(text=avatar_text, image=None, text_color=text_color)
+            else:
+                avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
+                self.avatar_label.configure(text=avatar_text, image=None, text_color=text_color)
 
     # ------------------------------------------------------------------
     # Focus & Input Handlers
@@ -254,12 +273,12 @@ class ClippyAssistant(ctk.CTkToplevel):
         label = ctk.CTkLabel(
             msg_frame,
             text=f"{sender}: {text}",
-            font=("Arial", 10),
-            wraplength=220,
+            font=("Arial", 11),
+            wraplength=260,
             justify="left",
             text_color="white" if is_user else ("black", "white"),
         )
-        label.pack(padx=6, pady=4, anchor="w")
+        label.pack(padx=8, pady=6, anchor="w")
         self._scroll_to_bottom()
 
     def _scroll_to_bottom(self):
@@ -278,9 +297,6 @@ class ClippyAssistant(ctk.CTkToplevel):
             if 0 <= self.sim_engine.history_index < len(self.sim_engine.history):
                 telemetry = self.sim_engine.history[self.sim_engine.history_index].telemetry
 
-        # -------------------------------------------------------------
-        # 1. NETWORKING, PDU & CISCO CLI QUERIES
-        # -------------------------------------------------------------
         if "pdu" in q or "packet" in q or "tracer" in q or "network" in q:
             return (
                 "📦 PDU Networking Engine:\n"
@@ -299,15 +315,11 @@ class ClippyAssistant(ctk.CTkToplevel):
                 "• Type 'show ip interface brief' or 'show ip route' to inspect device IP tables."
             )
 
-        # -------------------------------------------------------------
-        # 2. METASPLOIT ATTACK COMMANDS
-        # -------------------------------------------------------------
         elif "metasploit" in q or "exploit" in q or "payload" in q:
             if not current_graph or not getattr(current_graph, "nodes", None):
                 return "No canvas topology found! Select or place a network topology on the canvas first."
 
             net_canvas = getattr(self.parent, "net_canvas", None)
-
             target_idx = None
             for word in q.split():
                 if word.isdigit():
@@ -322,7 +334,6 @@ class ClippyAssistant(ctk.CTkToplevel):
 
             if 0 <= target_idx < len(current_graph.nodes):
                 target_node = current_graph.nodes[target_idx]
-                
                 msf = getattr(self.sim_engine, "msf_module", None)
                 if not msf:
                     from core.threat_modules import MetasploitAttack
@@ -342,15 +353,11 @@ class ClippyAssistant(ctk.CTkToplevel):
             
             return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
 
-        # -------------------------------------------------------------
-        # 3. VOLUMETRIC DDOS FLOOD COMMANDS
-        # -------------------------------------------------------------
         elif "ddos" in q or "flood" in q or "dos" in q:
             if not current_graph or not getattr(current_graph, "nodes", None):
                 return "No canvas topology found! Select or place a network topology on the canvas first."
 
             net_canvas = getattr(self.parent, "net_canvas", None)
-
             target_idx = None
             for word in q.split():
                 if word.isdigit():
@@ -365,7 +372,6 @@ class ClippyAssistant(ctk.CTkToplevel):
 
             if 0 <= target_idx < len(current_graph.nodes):
                 target_node = current_graph.nodes[target_idx]
-
                 if hasattr(self.sim_engine, "trigger_ddos_manual"):
                     self.sim_engine.trigger_ddos_manual(current_graph, target_node_idx=target_idx)
                 else:
@@ -383,9 +389,6 @@ class ClippyAssistant(ctk.CTkToplevel):
 
             return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
 
-        # -------------------------------------------------------------
-        # 4. GERALD THE SLIGHT FRAYER (RAINBOW TABLE LOOKUP)
-        # -------------------------------------------------------------
         elif "gerald" in q or "frayer" in q or "rainbow" in q or "crack" in q:
             if not current_graph or not getattr(current_graph, "edges", None):
                 return "No canvas topology found! Load a network scenario first."
@@ -405,9 +408,6 @@ class ClippyAssistant(ctk.CTkToplevel):
                 return f"⚡ [Gerald the Slight Frayer] Instant Rainbow Table match! Cracked credentials across {cracked_count} firewall edge(s)."
             return "⚡ [Gerald the Slight Frayer] Scanned network hashes, but all active firewalls are already breached or uninitialized."
 
-        # -------------------------------------------------------------
-        # 5. SIMULATION EXECUTION CONTROLS
-        # -------------------------------------------------------------
         elif "start" in q or "run" in q or "play" in q or "go" in q:
             if hasattr(self.parent, "play_sim"):
                 if getattr(self.parent, "is_running", False):
@@ -436,9 +436,6 @@ class ClippyAssistant(ctk.CTkToplevel):
                 return "🧹 Network canvas cleared."
             return "Unable to clear canvas."
 
-        # -------------------------------------------------------------
-        # 6. LIVE TELEMETRY QUERIES
-        # -------------------------------------------------------------
         elif "infected" in q or "status" in q or "how many" in q or "state" in q or "outbreak" in q:
             if not telemetry or telemetry.total_nodes == 0:
                 return "The simulation hasn't started yet! Type 'start' or press Play."
@@ -507,8 +504,8 @@ class ClippyAssistant(ctk.CTkToplevel):
             pw = self.parent.winfo_width()
             ph = self.parent.winfo_height()
 
-            width = 300
-            height = 320
+            width = 360
+            height = 420
 
             target_x = px + pw - width - 20
             target_y = py + ph - height - 20
@@ -524,8 +521,8 @@ class ClippyAssistant(ctk.CTkToplevel):
         if self.winfo_exists() and self.winfo_viewable():
             self.anim_phase += 0.2
             offset = int(math.sin(self.anim_phase) * 2)
-            top_pad = max(0, 6 + offset)
-            bottom_pad = max(0, 2 - offset)
+            top_pad = max(0, 8 + offset)
+            bottom_pad = max(0, 4 - offset)
             self.header_frame.grid_configure(pady=(top_pad, bottom_pad))
             self.after(90, self._animate_idle)
 
