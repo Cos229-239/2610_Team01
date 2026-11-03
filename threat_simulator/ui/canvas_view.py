@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import tkinter as tk
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Add project root directory to sys.path to resolve 'utils'
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -11,6 +11,7 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from utils.exporter import export_simulation_summary
+from ui.cli_window import CiscoCLITerminal
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -18,7 +19,7 @@ from PIL import Image, ImageTk
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
 
-# Standard Palette (Red / Amber / Green)
+# Default Standard Palette (Red / Amber / Green)
 STATUS_COLORS_STD = {
     "INFECTED": "#FF5252",
     "WARNING": "#FFB74D",
@@ -44,6 +45,13 @@ EDGE_COLORS_CB = {
     "HEALTHY": "#0072B2",
 }
 
+PDU_COLORS_STD = {
+    "ICMP": "#00E676",
+    "ARP": "#FFD54F",
+    "TCP": "#29B6F6",
+    "INFECT": "#FF1744",
+}
+
 
 class AssetManager:
     def __init__(self, assets_dir="assets"):
@@ -58,6 +66,8 @@ class AssetManager:
             "PC": "noun_Computer_6856966_@700.png",
             "SERVER": "noun_Server_1211215_@700.png",
             "PHONE": "noun_mobilephone_8150848_@700.png",
+            "SWITCH": "noun_Router_7285821_@700.png",    # Fallback asset
+            "FIREWALL": "noun_Server_1211215_@700.png",  # Fallback asset
         }
 
     def get_sprite(self, name, size=(32, 32)):
@@ -99,6 +109,11 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.node_select_callback = None
         self.colorblind_mode: bool = False
 
+        # Active Theme Color Maps
+        self.status_colors = STATUS_COLORS_STD.copy()
+        self.edge_colors = EDGE_COLORS_STD.copy()
+        self.pdu_colors = PDU_COLORS_STD.copy()
+
         # Viewport Transformations (Zoom & Pan)
         self.zoom_factor: float = 1.0
         self.pan_offset_x: float = 0.0
@@ -128,9 +143,26 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         self.sprite_manager = AssetManager()
 
+    def apply_custom_theme(self, theme_data: dict):
+        """Applies loaded JSON theme palette dynamically to canvas elements."""
+        self.configure(bg=theme_data.get("canvas_bg", "#d8ccb0"))
+        if "status_colors" in theme_data:
+            self.status_colors = theme_data["status_colors"]
+        if "edge_colors" in theme_data:
+            self.edge_colors = theme_data["edge_colors"]
+        if "pdu_colors" in theme_data:
+            self.pdu_colors = theme_data["pdu_colors"]
+        self.render()
+
     def set_colorblind_mode(self, enabled: bool):
         """Toggles colorblind-friendly rendering palette on canvas."""
         self.colorblind_mode = bool(enabled)
+        if self.colorblind_mode:
+            self.status_colors = STATUS_COLORS_CB.copy()
+            self.edge_colors = EDGE_COLORS_CB.copy()
+        else:
+            self.status_colors = STATUS_COLORS_STD.copy()
+            self.edge_colors = EDGE_COLORS_STD.copy()
         self.render()
 
     def set_node_select_callback(self, callback):
@@ -221,7 +253,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def _on_double_click(self, event):
-        """Double-click a node to edit its IP address and subnet."""
+        """Double-click a node to launch the interactive Cisco IOS CLI terminal."""
         if not self.graph:
             return
 
@@ -230,7 +262,95 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         if clicked_idx is not None:
             self.selected_node_idx = clicked_idx
-            self._edit_node_ip_dialog(clicked_idx)
+            node = self.graph.nodes[clicked_idx]
+
+            node_data = {
+                "id": node.id,
+                "ip_address": getattr(node, "ip_address", "192.168.1.1"),
+                "subnet": getattr(node, "subnet", "192.168.1.0/24"),
+                "node_type": getattr(node, "node_type", "Router"),
+            }
+
+            # Launch Cisco CLI Popup Modal
+            CiscoCLITerminal(
+                parent=self,
+                node_data=node_data,
+                execute_cmd_cb=self._handle_cli_command,
+            )
+
+    def _handle_cli_command(self, src_node_id: str, command: str) -> str:
+        """Processes CLI execution logic and triggers animated PDU packets across edges."""
+        tokens = command.split()
+        if not tokens:
+            return ""
+
+        base_cmd = tokens[0].lower()
+
+        if base_cmd == "ping" and len(tokens) > 1:
+            target_ip = tokens[1]
+
+            # 1. Locate Source and Target Node Indices
+            src_idx = next(
+                (i for i, n in enumerate(self.graph.nodes) if n.id == src_node_id), None
+            )
+            dst_idx = next(
+                (
+                    i
+                    for i, n in enumerate(self.graph.nodes)
+                    if getattr(n, "ip_address", "") == target_ip
+                ),
+                None,
+            )
+
+            if src_idx is None or dst_idx is None:
+                return (
+                    f"Sending 5, 100-byte ICMP Echos to {target_ip}, timeout is 2 seconds:\n"
+                    f".....\n"
+                    f"Success rate is 0 percent (0/5) — Host Unreachable"
+                )
+
+            # 2. Find Direct Edge Path
+            edge_idx = self._find_edge_between(src_idx, dst_idx)
+
+            if edge_idx is not None:
+                # 3. Spawn moving PDU frame onto the PDU engine
+                if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
+                    self.graph.pdu_engine.spawn_pdu(
+                        src_idx=src_idx,
+                        dst_idx=dst_idx,
+                        edge_idx=edge_idx,
+                        protocol="ICMP",
+                        speed=0.04,
+                    )
+                    self.render()
+
+                return (
+                    f"Type escape sequence to abort.\n"
+                    f"Sending 5, 100-byte ICMP Echos to {target_ip}, timeout is 2 seconds:\n"
+                    f"!!!!!\n"
+                    f"Success rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms"
+                )
+            else:
+                return (
+                    f"Sending 5, 100-byte ICMP Echos to {target_ip}, timeout is 2 seconds:\n"
+                    f".....\n"
+                    f"Success rate is 0 percent (0/5) — No route to host"
+                )
+
+        if "show ip interface" in command.lower():
+            return "Interface                  IP-Address      OK? Method Status                Protocol\nFastEthernet0/0            192.168.1.1     YES manual up                    up"
+
+        if "show ip route" in command.lower():
+            return "Codes: C - connected, S - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
+
+        return f"% Invalid command or syntax error at '{command}'"
+
+    def _find_edge_between(self, u: int, v: int) -> Optional[int]:
+        """Helper method to locate an edge index connecting two node indices."""
+        for idx, edge in enumerate(self.graph.edges):
+            if (edge.u == u and edge.v == v) or (edge.u == v and edge.v == u):
+                return idx
+        return None
 
     # ------------------------------------------------------------------
     # Canvas Mode Setup
@@ -300,27 +420,27 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         menu.add_command(
             label=f"Edit IP / Subnet... ({node.id})",
-            command=lambda: self._edit_node_ip_dialog(node_idx)
+            command=lambda: self._edit_node_ip_dialog(node_idx),
         )
         menu.add_separator()
 
         menu.add_command(
             label="Set as Patient Zero",
-            command=lambda: self._context_set_patient_zero(node_idx)
+            command=lambda: self._context_set_patient_zero(node_idx),
         )
         menu.add_command(
             label="Force Infect",
-            command=lambda: self._context_force_status(node_idx, "INFECTED")
+            command=lambda: self._context_force_status(node_idx, "INFECTED"),
         )
         menu.add_command(
             label="Force Clean (Healthy)",
-            command=lambda: self._context_force_status(node_idx, "HEALTHY")
+            command=lambda: self._context_force_status(node_idx, "HEALTHY"),
         )
         menu.add_separator()
 
         menu.add_command(
             label="Delete Node",
-            command=lambda: self._context_delete_node(node_idx)
+            command=lambda: self._context_delete_node(node_idx),
         )
 
         try:
@@ -346,8 +466,7 @@ class NetworkCanvas(ctk.CTkCanvas):
             return
 
         self.graph.edges = [
-            e for e in self.graph.edges
-            if e.u != node_idx and e.v != node_idx
+            e for e in self.graph.edges if e.u != node_idx and e.v != node_idx
         ]
 
         for e in self.graph.edges:
@@ -379,15 +498,21 @@ class NetworkCanvas(ctk.CTkCanvas):
         y = self.winfo_rooty() + 80
         dialog.geometry(f"+{x}+{y}")
 
-        ctk.CTkLabel(dialog, text=f"Node: {node.id}", font=("Arial", 13, "bold")).pack(pady=(15, 8))
+        ctk.CTkLabel(dialog, text=f"Node: {node.id}", font=("Arial", 13, "bold")).pack(
+            pady=(15, 8)
+        )
 
         ctk.CTkLabel(dialog, text="IP Address:").pack(anchor="w", padx=25)
-        ip_entry = ctk.CTkEntry(dialog, width=260, placeholder_text="e.g. 192.168.10.5")
+        ip_entry = ctk.CTkEntry(
+            dialog, width=260, placeholder_text="e.g. 192.168.10.5"
+        )
         ip_entry.pack(padx=25, pady=(0, 10))
         ip_entry.insert(0, node.ip_address or "")
 
         ctk.CTkLabel(dialog, text="Subnet:").pack(anchor="w", padx=25)
-        subnet_entry = ctk.CTkEntry(dialog, width=260, placeholder_text="e.g. 192.168.10.0/24")
+        subnet_entry = ctk.CTkEntry(
+            dialog, width=260, placeholder_text="e.g. 192.168.10.0/24"
+        )
         subnet_entry.pack(padx=25, pady=(0, 15))
         subnet_entry.insert(0, node.subnet or "")
 
@@ -405,8 +530,12 @@ class NetworkCanvas(ctk.CTkCanvas):
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(pady=5)
 
-        ctk.CTkButton(btn_frame, text="Save", width=100, command=save).pack(side="left", padx=8)
-        ctk.CTkButton(btn_frame, text="Cancel", width=100, fg_color="gray", command=dialog.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(btn_frame, text="Save", width=100, command=save).pack(
+            side="left", padx=8
+        )
+        ctk.CTkButton(
+            btn_frame, text="Cancel", width=100, fg_color="gray", command=dialog.destroy
+        ).pack(side="left", padx=8)
 
         ip_entry.focus_set()
 
@@ -439,9 +568,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         # Mode Interaction Routing
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
-                self.graph.add_node(
-                    world_x, world_y, node_type=self.active_node_type
-                )
+                self.graph.add_node(world_x, world_y, node_type=self.active_node_type)
                 self.render()
 
         elif self.mode == "CONNECT_EDGE":
@@ -504,13 +631,58 @@ class NetworkCanvas(ctk.CTkCanvas):
             if is_hovering_btn:
                 self.config(cursor="hand2")
             else:
-                self.config(cursor="X_cursor" if hovered_edge is not None else "crosshair")
+                self.config(
+                    cursor="X_cursor" if hovered_edge is not None else "crosshair"
+                )
         elif self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             self.render()
 
     # ------------------------------------------------------------------
-    # Render Loop
+    # Render Loop & Active PDU Animation
     # ------------------------------------------------------------------
+
+    def render_active_pdus(self, pdus: List):
+        """Renders animated Cisco Packet Tracer PDU envelopes traveling along edges."""
+        if not self.graph or not pdus:
+            return
+
+        zf = self.zoom_factor
+        for pdu in pdus:
+            if not (0 <= pdu.edge_idx < len(self.graph.edges)):
+                continue
+
+            edge = self.graph.edges[pdu.edge_idx]
+            if edge.u >= len(self.graph.nodes) or edge.v >= len(self.graph.nodes):
+                continue
+
+            n_src = self.graph.nodes[pdu.src_node_idx]
+            n_dst = self.graph.nodes[pdu.dst_node_idx]
+
+            s_src_x, s_src_y = self.world_to_screen(n_src.x, n_src.y)
+            s_dst_x, s_dst_y = self.world_to_screen(n_dst.x, n_dst.y)
+
+            px = s_src_x + (s_dst_x - s_src_x) * pdu.progress
+            py = s_src_y + (s_dst_y - s_src_y) * pdu.progress
+
+            pdu_color = self.pdu_colors.get(pdu.protocol, "#FFFFFF")
+
+            badge_sz = max(6, int(10 * zf))
+            self.create_rectangle(
+                px - badge_sz,
+                py - int(badge_sz / 1.5),
+                px + badge_sz,
+                py + int(badge_sz / 1.5),
+                fill=pdu_color,
+                outline="#000000",
+                width=1,
+            )
+            self.create_text(
+                px,
+                py,
+                text=pdu.protocol[:3],
+                fill="#000000",
+                font=("Consolas", max(5, int(6 * zf)), "bold"),
+            )
 
     def render(self):
         self.delete("all")
@@ -520,18 +692,24 @@ class NetworkCanvas(ctk.CTkCanvas):
             return
 
         zf = self.zoom_factor
-        edge_palette = EDGE_COLORS_CB if self.colorblind_mode else EDGE_COLORS_STD
 
         # 1. Render Edges & Firewall Security Barriers
         for index, edge in enumerate(self.graph.edges):
-            if 0 <= edge.u < len(self.graph.nodes) and 0 <= edge.v < len(self.graph.nodes):
+            if 0 <= edge.u < len(self.graph.nodes) and 0 <= edge.v < len(
+                self.graph.nodes
+            ):
                 n1, n2 = self.graph.nodes[edge.u], self.graph.nodes[edge.v]
                 s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
                 s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
 
                 if getattr(edge, "is_firewall", False):
                     self.create_line(
-                        s1_x, s1_y, s2_x, s2_y, fill="#00E5FF", width=max(2, int(6 * zf))
+                        s1_x,
+                        s1_y,
+                        s2_x,
+                        s2_y,
+                        fill="#00E5FF",
+                        width=max(2, int(6 * zf)),
                     )
 
                     progress = getattr(edge, "crack_progress", 0.0)
@@ -542,7 +720,12 @@ class NetworkCanvas(ctk.CTkCanvas):
                     )
 
                     self.create_line(
-                        s1_x, s1_y, s2_x, s2_y, fill=beam_color, width=max(1, int(2 * zf))
+                        s1_x,
+                        s1_y,
+                        s2_x,
+                        s2_y,
+                        fill=beam_color,
+                        width=max(1, int(2 * zf)),
                     )
 
                     mid_sx, mid_sy = (s1_x + s2_x) / 2, (s1_y + s2_y) / 2
@@ -599,13 +782,19 @@ class NetworkCanvas(ctk.CTkCanvas):
                         font=("Arial", max(7, int(9 * zf))),
                     )
                 else:
-                    edge_color = edge_palette.get(edge.status, "#444444")
-                    edge_width = max(1, int((2 if edge.status != "HEALTHY" else 1) * zf))
+                    edge_color = self.edge_colors.get(edge.status, "#444444")
+                    edge_width = max(
+                        1, int((2 if edge.status != "HEALTHY" else 1) * zf)
+                    )
                     self.create_line(
                         s1_x, s1_y, s2_x, s2_y, fill=edge_color, width=edge_width
                     )
 
-        # 2. Render Connection Preview Line
+        # 2. Render Active Moving PDUs
+        if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
+            self.render_active_pdus(self.graph.pdu_engine.active_pdus)
+
+        # 3. Render Connection Preview Line
         if self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             if 0 <= self.selected_node_idx < len(self.graph.nodes):
                 src = self.graph.nodes[self.selected_node_idx]
@@ -622,7 +811,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                     dash=(4, 4),
                 )
 
-        # 3. Render Nodes and Sprites
+        # 4. Render Nodes and Sprites
         for i, node in enumerate(self.graph.nodes):
             sx, sy = self.world_to_screen(node.x, node.y)
             type_cfg = NODE_TYPES.get(
@@ -630,7 +819,6 @@ class NetworkCanvas(ctk.CTkCanvas):
             )
             radius = int((type_cfg.radius if type_cfg else 14) * zf)
 
-            # High contrast attack flash animation overlay
             if i == self.flashing_node_idx and self.flash_state:
                 self.create_oval(
                     sx - radius - int(12 * zf),
@@ -642,7 +830,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
             if node.is_patient_zero:
-                p0_color = "#D55E00" if self.colorblind_mode else "#ff3b3b"
+                p0_color = self.status_colors.get("INFECTED", "#ff3b3b")
                 self.create_oval(
                     sx - int(32 * zf),
                     sy - int(32 * zf),
@@ -681,6 +869,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
             sprite_size = max(16, int(32 * zf))
+            node_type = getattr(node, "node_type", "PC")
 
             if node.is_patient_zero:
                 sprite_img = self.sprite_manager.get_sprite(
@@ -690,9 +879,21 @@ class NetworkCanvas(ctk.CTkCanvas):
                 sprite_img = self.sprite_manager.get_sprite(
                     "CRAWLER", size=(sprite_size, sprite_size)
                 )
-            elif getattr(node, "node_type", "") == "Router":
+            elif node_type == "Router":
                 sprite_img = self.sprite_manager.get_sprite(
                     "ROUTER", size=(sprite_size, sprite_size)
+                )
+            elif node_type == "Server":
+                sprite_img = self.sprite_manager.get_sprite(
+                    "SERVER", size=(sprite_size, sprite_size)
+                )
+            elif node_type == "Switch":
+                sprite_img = self.sprite_manager.get_sprite(
+                    "SWITCH", size=(sprite_size, sprite_size)
+                )
+            elif node_type == "Firewall":
+                sprite_img = self.sprite_manager.get_sprite(
+                    "FIREWALL", size=(sprite_size, sprite_size)
                 )
             else:
                 sprite_size_laptop = max(14, int(28 * zf))
@@ -701,9 +902,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
             if sprite_img:
-                self.create_image(
-                    sx, sy, image=sprite_img, anchor="center"
-                )
+                self.create_image(sx, sy, image=sprite_img, anchor="center")
 
             label = "PATIENT ZERO" if node.is_patient_zero else node.id
             font_color = "#B71C1C" if node.is_patient_zero else "#222222"
@@ -717,7 +916,6 @@ class NetworkCanvas(ctk.CTkCanvas):
                 font=("Courier", font_sz, "bold"),
             )
 
-            # IP address & Subnet badge under the node name
             if getattr(node, "ip_address", ""):
                 ip_font_sz = max(5, int(7 * zf))
                 ip_text = f"{node.ip_address}"
@@ -732,6 +930,29 @@ class NetworkCanvas(ctk.CTkCanvas):
                     font=("Consolas", ip_font_sz),
                 )
 
+            # 5. Render Infection Step Badge if Infected
+            step_val = getattr(node, "infection_step", -1)
+            if node.status == "INFECTED" and step_val >= 0:
+                badge_radius = max(7, int(10 * zf))
+                bx = sx + radius + int(4 * zf)
+                by = sy - radius - int(4 * zf)
+                self.create_oval(
+                    bx - badge_radius,
+                    by - badge_radius,
+                    bx + badge_radius,
+                    by + badge_radius,
+                    fill="#D32F2F",
+                    outline="#FFFFFF",
+                    width=1,
+                )
+                self.create_text(
+                    bx,
+                    by,
+                    text=str(step_val),
+                    fill="#FFFFFF",
+                    font=("Arial", max(6, int(7 * zf)), "bold"),
+                )
+
 
 class CanvasView(ctk.CTkFrame):
     def __init__(self, parent, simulation):
@@ -742,9 +963,7 @@ class CanvasView(ctk.CTkFrame):
         self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.export_button = ctk.CTkButton(
-            self, 
-            text="Export Simulation Report", 
-            command=self.trigger_export
+            self, text="Export Simulation Report", command=self.trigger_export
         )
         self.export_button.pack(pady=10)
 
@@ -759,16 +978,18 @@ class CanvasView(ctk.CTkFrame):
 
     def trigger_export(self):
         try:
-            graph = getattr(self.simulation, "graph", None) or getattr(self.canvas, "graph", None)
+            graph = getattr(self.simulation, "graph", None) or getattr(
+                self.canvas, "graph", None
+            )
             if not graph:
                 print("Export failed: Active simulation graph not found.")
                 return
-            
+
             filepath = export_simulation_summary(graph)
-            
+
             with open(filepath, "r") as f:
                 report_data = json.load(f)
-            
+
             popup = ctk.CTkToplevel(self)
             popup.title("Simulation Report Exported")
             popup.geometry("480x380")
@@ -776,17 +997,17 @@ class CanvasView(ctk.CTkFrame):
             popup.grab_set()
 
             ctk.CTkLabel(
-                popup, 
-                text="Report Saved Successfully!", 
-                font=("Arial", 14, "bold"), 
-                text_color="#2E7D32"
+                popup,
+                text="Report Saved Successfully!",
+                font=("Arial", 14, "bold"),
+                text_color="#2E7D32",
             ).pack(pady=(15, 5))
-            
+
             ctk.CTkLabel(
-                popup, 
-                text=f"Saved to: {filepath}", 
-                font=("Arial", 10), 
-                text_color="gray"
+                popup,
+                text=f"Saved to: {filepath}",
+                font=("Arial", 10),
+                text_color="gray",
             ).pack(pady=5)
 
             textbox = ctk.CTkTextbox(popup, width=430, height=220)
@@ -794,11 +1015,9 @@ class CanvasView(ctk.CTkFrame):
             textbox.insert("1.0", json.dumps(report_data, indent=2))
             textbox.configure(state="disabled")
 
-            ctk.CTkButton(
-                popup, 
-                text="Close", 
-                command=popup.destroy
-            ).pack(pady=(5, 15))
+            ctk.CTkButton(popup, text="Close", command=popup.destroy).pack(
+                pady=(5, 15)
+            )
 
         except Exception as e:
             print(f"Export failed: {e}")

@@ -1,0 +1,30 @@
+{
+  "$schema": "./theme_schema.json",
+  "name": "Cyberpunk Neon",
+  "author": "System",
+  "appearance_mode": "Dark",
+  "canvas_bg": "#d8ccb0",
+  "status_colors": {
+    "HEALTHY": "#00f0ff",
+    "WARNING": "#ffb74d",
+    "INFECTED": "#ff007f"
+  },
+  "edge_colors": {
+    "HEALTHY": "#b026ff",
+    "WARNING": "#ffb74d",
+    "INFECTED": "#ff007f"
+  },
+  "pdu_colors": {
+    "ICMP": "#00f0ff",
+    "ARP": "#ffb74d",
+    "TCP": "#b026ff",
+    "INFECT": "#ff007f"
+  },
+  "clippy": {
+    "window_bg": "#12131c",
+    "bubble_bg": "#1a1c29",
+    "text_color": "#39ff14",
+    "border_color": "#ff007f",
+    "avatar": "[🤖 CYBER-CLIPPY]"
+  }
+}
