@@ -367,6 +367,18 @@ class SimulatorApp(ctk.CTk):
             "Execute a volumetric DDoS flood against the selected node.",
         )
 
+        # --- Nuke Protocol Button ---
+        self.nuke_button = ctk.CTkButton(
+            btn_frame,
+            text="☢ NUKE",
+            fg_color="#B71C1C",
+            hover_color="#880E4F",
+            font=("Arial", 12, "bold"),
+            command=self.on_click_nuke
+        )
+        self.nuke_button.grid(row=0, column=6, padx=2, pady=5, sticky="ew")
+        ToolTip(self.nuke_button, "Execute all threat modules simultaneously with a countdown.")
+
         # Telemetry Panel
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
@@ -490,6 +502,103 @@ class SimulatorApp(ctk.CTk):
                 self.net_canvas.flash_target_node(target_idx)
             else:
                 self.net_canvas.render()
+
+    def on_click_nuke(self):
+        """Displays a dramatic countdown modal before launching the Nuke Protocol."""
+        nuke_dialog = ctk.CTkToplevel(self)
+        nuke_dialog.title("⚠️ NUKE PROTOCOL INITIATED")
+        nuke_dialog.geometry("380x240")
+        nuke_dialog.resizable(False, False)
+        nuke_dialog.transient(self)
+        nuke_dialog.grab_set()
+        nuke_dialog.focus_force()
+
+        ctk.CTkLabel(
+            nuke_dialog,
+            text="☢ FULL NUKE SALVO ☢",
+            font=("Arial", 18, "bold"),
+            text_color="#FF1744",
+        ).pack(pady=(20, 5))
+
+        ctk.CTkLabel(
+            nuke_dialog,
+            text="Initiating simultaneous attack sequence across all threat modules:\nMetasploit • Gerald • DDoS • Logic Bomb",
+            font=("Arial", 11),
+            justify="center",
+            wraplength=340,
+        ).pack(pady=5)
+
+        self.countdown_seconds = 3
+        countdown_label = ctk.CTkLabel(
+            nuke_dialog,
+            text=f"DETONATION IN: {self.countdown_seconds}",
+            font=("Consolas", 20, "bold"),
+            text_color="#FF1744",
+        )
+        countdown_label.pack(pady=10)
+
+        modal_btn_frame = ctk.CTkFrame(nuke_dialog, fg_color="transparent")
+        modal_btn_frame.pack(pady=10)
+
+        self.nuke_timer_job = None
+
+        def abort_nuke():
+            if self.nuke_timer_job:
+                self.after_cancel(self.nuke_timer_job)
+                self.nuke_timer_job = None
+            nuke_dialog.destroy()
+            if hasattr(self, 'telemetry_panel'):
+                self.telemetry_panel.append_raw_event("SYSTEM", "[ABORT] Nuke Protocol canceled by operator.")
+
+        def execute_salvo():
+            if self.nuke_timer_job:
+                self.after_cancel(self.nuke_timer_job)
+                self.nuke_timer_job = None
+            nuke_dialog.destroy()
+            
+            if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
+                events = self.sim_engine.trigger_nuke_all(self.graph)
+                infected_cnt = sum(
+                    1 for n in self.graph.nodes 
+                    if getattr(n, 'status', '') == "INFECTED" or getattr(n, 'is_patient_zero', False)
+                )
+                
+                telemetry = TelemetryData(
+                    step=self.sim_engine.step_counter,
+                    status="CRITICAL: FULL NUKE SALVO EXECUTED",
+                    infected_nodes=infected_cnt,
+                    recovered_nodes=self.sim_engine.total_recovered_count,
+                    total_nodes=self.graph.node_count,
+                    active_defenses=int(self.slider_def.get() * 10),
+                    threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
+                    escalation_factor=100.0,
+                    sim_time_seconds=self.sim_engine.step_counter,
+                    events=events
+                )
+                self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+                self.net_canvas.render()
+
+        def update_timer():
+            if self.countdown_seconds > 1:
+                self.countdown_seconds -= 1
+                countdown_label.configure(text=f"DETONATION IN: {self.countdown_seconds}")
+                self.nuke_timer_job = self.after(1000, update_timer)
+            else:
+                execute_salvo()
+
+        ctk.CTkButton(
+            modal_btn_frame, text="ABORT", fg_color="#D32F2F", hover_color="#9A0007", width=110, command=abort_nuke
+        ).pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            modal_btn_frame, text="BYPASS (FIRE NOW)", fg_color="#FF6F00", hover_color="#C43E00", width=130, command=execute_salvo
+        ).pack(side="left", padx=10)
+
+        self.nuke_timer_job = self.after(1000, update_timer)
+
+    # ------------------------------------------------------------------
+    # Menu & Dialogs
+    # ------------------------------------------------------------------
 
     def _build_menu(self):
         menubar = Menu(self)
@@ -628,6 +737,61 @@ class SimulatorApp(ctk.CTk):
     # Simulation Loop Controls
     # ------------------------------------------------------------------
 
+    def show_clippy_ransomware(self):
+        """Displays a bright red themed Clippy Ransomware pop-up Easter egg."""
+        ransom = ctk.CTkToplevel(self)
+        ransom.title("📎 CLIPPY SECURITY ALERT")
+        ransom.geometry("420x260")
+        ransom.resizable(False, False)
+        ransom.transient(self)
+        ransom.grab_set()
+        ransom.focus_force()
+        
+        # Hazard dark red background theme
+        ransom.configure(fg_color="#1a0000")
+
+        ctk.CTkLabel(
+            ransom,
+            text="📎 IT LOOKS LIKE YOU'RE BEING RANSOMED!",
+            font=("Arial", 14, "bold"),
+            text_color="#FF1744"  # Bright alarm red header
+        ).pack(pady=(20, 10))
+
+        msg = (
+            "Your network topology pointers and node memory addresses "
+            "have been encrypted by The Bay Harbor Butcher.\n\n"
+            "To recover your simulation session, please transfer 5000 Dogecoin "
+            "to Garret's wallet or click 'Pay Ransom' below."
+        )
+
+        ctk.CTkLabel(
+            ransom, 
+            text=msg, 
+            font=("Arial", 11), 
+            text_color="#FFFFFF",  # High-contrast white text for readability
+            justify="center", 
+            wraplength=360
+        ).pack(pady=10)
+
+        btn_frame = ctk.CTkFrame(ransom, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        def pay_ransom():
+            ransom.destroy()
+            if hasattr(self, 'telemetry_panel'):
+                self.telemetry_panel.append_raw_event(
+                    "CLIPPY RANSOMWARE",
+                    "Payment processing failed: Invalid Dogecoin address. Session host forced to cry about it."
+                )
+
+        ctk.CTkButton(
+            btn_frame, text="Pay Ransom (500 DOGE)", fg_color="#00C853", hover_color="#009624", width=160, command=pay_ransom
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame, text="Refuse", fg_color="#D32F2F", hover_color="#9A0007", width=100, command=ransom.destroy
+        ).pack(side="left", padx=5)
+
     def play_sim(self):
         if not self.is_running:
             self.is_running = True
@@ -640,6 +804,13 @@ class SimulatorApp(ctk.CTk):
             self.loop_job = None
 
     def reset_sim(self):
+        # Easter egg: 3 rapid reset clicks triggers Clippy's ransomware prank
+        self.reset_click_count = getattr(self, 'reset_click_count', 0) + 1
+        if self.reset_click_count == 3:
+            self.reset_click_count = 0
+            self.show_clippy_ransomware()
+            return
+
         self.pause_sim()
         self.sim_engine.reset()
         self.telemetry_panel.clear()
