@@ -40,6 +40,10 @@ class PDUSimulationEngine:
         self.tick_delay_ms: int = 40  # Speed control (~25 FPS)
         self.auto_infect: bool = False  # Toggle switch for automated propagation
 
+    def update_packets(self):
+        """Alias for step_simulation to ensure compatibility with app loop calls."""
+        return self.step_simulation()
+
     def spawn_pdu(
         self,
         src_idx: int,
@@ -48,7 +52,13 @@ class PDUSimulationEngine:
         protocol: str = "ICMP",
         speed: float = 0.05,
     ):
-        """Enqueues a new PDU onto an active edge path."""
+        """Enqueues a new PDU onto an active edge path, checking firewall status first."""
+        if self.graph and 0 <= edge_idx < len(self.graph.edges):
+            edge = self.graph.edges[edge_idx]
+            if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) < 1.0:
+                # Firewall blocks this packet from entering the edge
+                return
+
         pdu = PDU(
             src_node_idx=src_idx,
             dst_node_idx=dst_idx,
@@ -67,8 +77,10 @@ class PDUSimulationEngine:
         p0_node = self.graph.nodes[p0_idx]
         p0_node.status = "INFECTED"
 
-        # Find all edges attached to Patient Zero and enqueue INFECT PDUs
         for edge_idx, edge in enumerate(self.graph.edges):
+            if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) < 1.0:
+                continue
+
             target_idx = None
             if edge.u == p0_idx:
                 target_idx = edge.v
@@ -85,12 +97,22 @@ class PDUSimulationEngine:
                 )
 
     def step_simulation(self) -> bool:
-        """Executes a single simulation tick forward."""
+        """Executes a single simulation tick forward, checking firewall state mid-transit."""
         if not self.active_pdus:
             return False
 
         remaining_pdus = []
         for pdu in self.active_pdus:
+            blocked = False
+            if self.graph and 0 <= pdu.edge_idx < len(self.graph.edges):
+                edge = self.graph.edges[pdu.edge_idx]
+                if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) < 1.0:
+                    blocked = True
+
+            if blocked:
+                # Drop/discard packet at the firewall boundary
+                continue
+
             reached = pdu.step()
             if not reached:
                 remaining_pdus.append(pdu)
@@ -111,9 +133,11 @@ class PDUSimulationEngine:
         if pdu.protocol == "INFECT":
             dst_node.status = "INFECTED"
 
-            # Propagate further to neighboring healthy nodes only if auto_infect is enabled
             if self.auto_infect:
                 for edge_idx, edge in enumerate(self.graph.edges):
+                    if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) < 1.0:
+                        continue
+
                     next_target = None
                     if edge.u == pdu.dst_node_idx:
                         next_target = edge.v

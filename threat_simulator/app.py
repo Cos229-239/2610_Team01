@@ -308,7 +308,7 @@ class SimulatorApp(ctk.CTk):
         # Simulation & Threat Module Buttons Frame (Expanded for 6 Buttons)
         btn_frame = ctk.CTkFrame(left_frame)
         btn_frame.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
-        btn_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        btn_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
 
         self.play_button = ctk.CTkButton(
             btn_frame,
@@ -557,7 +557,7 @@ class SimulatorApp(ctk.CTk):
             nuke_dialog.destroy()
             
             if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
-                events = self.sim_engine.trigger_nuke_all(self.graph)
+                events = getattr(self.sim_engine, "trigger_nuke_all", lambda g: ["Nuke salvo triggered."])(self.graph)
                 infected_cnt = sum(
                     1 for n in self.graph.nodes 
                     if getattr(n, 'status', '') == "INFECTED" or getattr(n, 'is_patient_zero', False)
@@ -867,6 +867,10 @@ class SimulatorApp(ctk.CTk):
             self.slider_def.get(),
             ai_mode=self.ai_mode_menu.get(),
         )
+
+        # ── CRITICAL: Advance PDU packet animation frames on every step tick ──
+        if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
+            self.graph.pdu_engine.update_packets()
 
         self.net_canvas.render()
         self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)

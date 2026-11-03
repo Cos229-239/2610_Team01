@@ -191,6 +191,9 @@ class ClippyAssistant(ctk.CTkToplevel):
             text_color = clippy_cfg.get("text_color", "#3B82F6")
             icon_path = clippy_cfg.get("avatar_icon", None)
             
+            # Clear old Tcl image registry reference before assigning new image
+            self.avatar_label.configure(image="")
+
             if icon_path and os.path.exists(icon_path):
                 try:
                     pil_image = Image.open(icon_path)
@@ -205,10 +208,10 @@ class ClippyAssistant(ctk.CTkToplevel):
                 except Exception as e:
                     print(f"[ClippyAssistant] Error loading avatar icon '{icon_path}': {e}")
                     avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
-                    self.avatar_label.configure(text=avatar_text, image=None, text_color=text_color)
+                    self.avatar_label.configure(text=avatar_text, image="", text_color=text_color)
             else:
                 avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
-                self.avatar_label.configure(text=avatar_text, image=None, text_color=text_color)
+                self.avatar_label.configure(text=avatar_text, image="", text_color=text_color)
 
     # ------------------------------------------------------------------
     # Focus & Input Handlers

@@ -1,4 +1,3 @@
-
 import random
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -103,6 +102,30 @@ class SimulationEngine:
         return self.history_index < len(self.history) - 1
 
     # ------------------------------------------------------------------
+    # PDU PACKET TRACER ANIMATION HELPER
+    # ------------------------------------------------------------------
+
+    def _spawn_pdu_packet(self, graph: NetworkGraph, source_idx: int, target_idx: int, pdu_type: str):
+        """Spawns an animated PDU packet on the graph's PduEngine for canvas rendering."""
+        if hasattr(graph, "pdu_engine") and graph.pdu_engine and hasattr(graph.pdu_engine, "spawn_pdu"):
+            if 0 <= source_idx < len(graph.nodes) and 0 <= target_idx < len(graph.nodes):
+                # Find the connecting edge index between source and target
+                edge_idx = None
+                for idx, edge in enumerate(graph.edges):
+                    if (edge.u == source_idx and edge.v == target_idx) or (edge.u == target_idx and edge.v == source_idx):
+                        edge_idx = idx
+                        break
+
+                if edge_idx is not None:
+                    graph.pdu_engine.spawn_pdu(
+                        src_idx=source_idx,
+                        dst_idx=target_idx,
+                        edge_idx=edge_idx,
+                        protocol=pdu_type,
+                        speed=0.04
+                    )
+
+    # ------------------------------------------------------------------
     # MANUAL THREAT MODULE TRIGGERS
     # ------------------------------------------------------------------
 
@@ -115,9 +138,13 @@ class SimulationEngine:
         target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
         target_node = graph.nodes[target_idx]
 
-        source_node = graph.nodes[0] if graph.nodes else target_node
+        source_idx = 0
+        source_node = graph.nodes[source_idx] if graph.nodes else target_node
         self.msf_module.execute(source_node=source_node, target_node=target_node)
         target_node.status = "INFECTED"
+
+        # Spawn visual infection PDU packet
+        self._spawn_pdu_packet(graph, source_idx, target_idx, "INFECT")
 
         return [f"🐉 Metasploit payload breached Node {target_idx} ({getattr(target_node, 'id', target_idx)})."]
 
@@ -146,9 +173,11 @@ class SimulationEngine:
 
         target_idx = target_node_idx if target_node_idx is not None else 0
         target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
-        target_node = graph.nodes[target_idx]
+        
+        # Spawn attack flood packets from node 0 to the target
+        self._spawn_pdu_packet(graph, 0, target_idx, "INFECT")
 
-        event_msg = self.ddos_module.execute(target_node)
+        event_msg = self.ddos_module.execute(graph.nodes[target_idx])
         return [event_msg]
 
     def msf_attack_triggered(self, inf_idx: int, graph: NetworkGraph, effective_inf_rate: float) -> bool:
@@ -352,6 +381,11 @@ class SimulationEngine:
 
                     if random.random() < attack_pressure and random.random() >= block_chance:
                         newly_infected.add(target_idx)
+                        
+                        # Spawn synchronized PDU packet from source to target
+                        active_source = next((src for src in currently_infected if target_idx in adj[src]), list(currently_infected)[0])
+                        self._spawn_pdu_packet(graph, active_source, target_idx, "INFECT")
+
                         target_id = getattr(t_node, 'id', target_idx)
                         step_events.append(
                             f"Strategic AI: Breached {'cross-subnet ' if is_cross else ''}target Node {target_id}"
@@ -378,6 +412,11 @@ class SimulationEngine:
 
                     if random.random() < chance and random.random() >= block_chance:
                         newly_infected.add(target_idx)
+                        
+                        # Spawn synchronized PDU packet from source to target
+                        active_source = next((src for src in currently_infected if target_idx in adj[src]), list(currently_infected)[0])
+                        self._spawn_pdu_packet(graph, active_source, target_idx, "INFECT")
+
                         target_id = getattr(t_node, 'id', target_idx)
                         step_events.append(
                             f"Uniform AI: Breached {'cross-subnet ' if is_cross else ''}target Node {target_id}"
