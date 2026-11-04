@@ -21,12 +21,13 @@ from ui.tooltip import ToolTip
 from ui.assistant import ClippyAssistant
 from ui.pdu_controls import PDUControlPanel
 from utils.theme_loader import ThemeManager
+
 # --- DEPENDENCY-FREE THEME AUDIO MANAGER ---
-import os
 import platform
 import subprocess
 import threading
 import time
+
 
 class SimulationThemeManager:
     def __init__(self, wav_name: str = "Midnight_Override.wav"):
@@ -65,14 +66,12 @@ class SimulationThemeManager:
             while not self._stop_event.is_set():
                 try:
                     if system == "Linux":
-                        # Try running aplay; suppress error clutter if ALSA sink is busy
                         process = subprocess.run(
                             ["aplay", "-q", self.wav_path],
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             check=False
                         )
-                        # If aplay failed immediately, wait a couple seconds before retrying
                         if process.returncode != 0:
                             time.sleep(3)
                     elif system == "Darwin":
@@ -88,7 +87,6 @@ class SimulationThemeManager:
                     print(f"[Theme Error] Playback exception: {e}")
                     time.sleep(3)
                 
-                # Small breather between loop iterations
                 time.sleep(0.5)
 
         self._thread = threading.Thread(target=_play_loop, daemon=True)
@@ -102,6 +100,7 @@ class SimulationThemeManager:
                 winsound.PlaySound(None, 0)
             except Exception:
                 pass
+
 
 class SimulatorApp(ctk.CTk):
     def __init__(self):
@@ -117,7 +116,6 @@ class SimulatorApp(ctk.CTk):
         # Dynamic Theme Engine Manager
         self.theme_manager = ThemeManager()
         
-        # Dynamically grab the first loaded theme name
         theme_names = list(self.theme_manager.available_themes.keys())
         self.current_theme_name = theme_names[0] if theme_names else "Classic Beige"
 
@@ -130,14 +128,11 @@ class SimulatorApp(ctk.CTk):
 
         self._build_ui()
         self._build_menu()
-# --- INITIALIZE AND START THE SIMULATION THEME ---
+
+        # --- INITIALIZE AND START THE SIMULATION THEME ---
         self.theme_manager_audio = SimulationThemeManager("Midnight_Override.wav")
         self.theme_manager_audio.start_theme()
-        
-        # Initialize Desktop Interactive Assistant with live simulation context references
-        self.assistant = ClippyAssistant(
-            self, sim_engine=self.sim_engine, graph=self.graph
-        )
+
         # Initialize Desktop Interactive Assistant with live simulation context references
         self.assistant = ClippyAssistant(
             self, sim_engine=self.sim_engine, graph=self.graph
@@ -145,7 +140,6 @@ class SimulatorApp(ctk.CTk):
 
         self._on_level_change("Level 1: Ring Topology")
         
-        # Apply initial theme to canvas and assistant
         self.select_json_theme(self.current_theme_name)
 
     # ------------------------------------------------------------------
@@ -205,7 +199,6 @@ class SimulatorApp(ctk.CTk):
         else:
             self.graph.clear()
 
-        # Update bindings to the active graph instance
         self.canvas_wrapper.set_graph(self.graph)
         if hasattr(self, "pdu_controls") and hasattr(self.graph, "pdu_engine"):
             self.pdu_controls.engine = self.graph.pdu_engine
@@ -219,13 +212,11 @@ class SimulatorApp(ctk.CTk):
         self.grid_columnconfigure(1, weight=2)
         self.grid_rowconfigure(0, weight=1)
 
-        # Left Column Frame
         left_frame = ctk.CTkFrame(self)
         left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
         left_frame.grid_rowconfigure(2, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
 
-        # Controls Header
         top_ctrl = ctk.CTkFrame(left_frame)
         top_ctrl.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
 
@@ -249,7 +240,6 @@ class SimulatorApp(ctk.CTk):
             "Select a predefined network topology or start with a blank canvas.",
         )
 
-        # Segmented Button for Canvas Editing Mode (Includes Firewall)
         self.mode_selector = ctk.CTkSegmentedButton(
             top_ctrl,
             values=["Move", "+ Node", "+ Edge", "Infect", "Firewall"],
@@ -258,7 +248,6 @@ class SimulatorApp(ctk.CTk):
         self.mode_selector.set("Move")
         self.mode_selector.grid(row=0, column=2, padx=10, pady=5)
 
-        # Device Selection Menu for Node Placement
         ctk.CTkLabel(top_ctrl, text="Device:", font=("Arial", 11)).grid(
             row=0, column=3, padx=(10, 2), pady=5
         )
@@ -275,7 +264,6 @@ class SimulatorApp(ctk.CTk):
             "Choose what device type will be placed when adding nodes.",
         )
 
-        # Spread AI Strategy Selector
         ctk.CTkLabel(top_ctrl, text="AI Mode:", font=("Arial", 11)).grid(
             row=0, column=5, padx=(10, 2), pady=5
         )
@@ -306,7 +294,6 @@ class SimulatorApp(ctk.CTk):
             command=self.open_settings,
         ).grid(row=0, column=8, padx=5, pady=5)
 
-        # Interactive Assistant Toggle Button
         self.btn_assistant = ctk.CTkButton(
             top_ctrl,
             text="📎 Help",
@@ -322,7 +309,6 @@ class SimulatorApp(ctk.CTk):
             "Open the interactive desktop assistant for guided instructions.",
         )
 
-        # Sliders
         slider_frame = ctk.CTkFrame(left_frame)
         slider_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
@@ -370,7 +356,6 @@ class SimulatorApp(ctk.CTk):
             "Increase the network's ability to resist infection.",
         )
 
-        # Canvas View Wrapper & Direct Canvas Reference
         self.canvas_wrapper = CanvasView(left_frame, self.sim_engine)
         self.net_canvas = self.canvas_wrapper.canvas
 
@@ -384,7 +369,6 @@ class SimulatorApp(ctk.CTk):
             sticky="nsew",
         )
 
-        # Cisco Packet Tracer PDU Animation Control Panel
         self.pdu_controls = PDUControlPanel(
             parent=left_frame,
             engine=getattr(self.graph, "pdu_engine", None),
@@ -392,7 +376,6 @@ class SimulatorApp(ctk.CTk):
         )
         self.pdu_controls.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
 
-        # Simulation & Threat Module Buttons Frame (Expanded for 6 Buttons)
         btn_frame = ctk.CTkFrame(left_frame)
         btn_frame.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
         btn_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
@@ -414,7 +397,6 @@ class SimulatorApp(ctk.CTk):
             btn_frame, text="Reset", command=self.reset_sim
         ).grid(row=0, column=2, padx=2, pady=5, sticky="ew")
 
-        # Manual Threat Module Buttons
         self.msf_button = ctk.CTkButton(
             btn_frame,
             text="Run Metasploit",
@@ -454,7 +436,6 @@ class SimulatorApp(ctk.CTk):
             "Execute a volumetric DDoS flood against the selected node.",
         )
 
-        # --- Nuke Protocol Button ---
         self.nuke_button = ctk.CTkButton(
             btn_frame,
             text="☢ NUKE",
@@ -466,7 +447,6 @@ class SimulatorApp(ctk.CTk):
         self.nuke_button.grid(row=0, column=6, padx=2, pady=5, sticky="ew")
         ToolTip(self.nuke_button, "Execute all threat modules simultaneously with a countdown.")
 
-        # Telemetry Panel
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
@@ -484,10 +464,8 @@ class SimulatorApp(ctk.CTk):
             ctk.set_appearance_mode(theme_data["appearance_mode"])
             self.settings["dark_mode"] = (theme_data["appearance_mode"] == "Dark")
 
-        # Apply theme to canvas view
         self.net_canvas.apply_custom_theme(theme_data)
 
-        # Apply theme and custom avatar config to Clippy assistant
         if hasattr(self, "assistant") and self.assistant:
             self.assistant.apply_theme(theme_data)
 
@@ -691,7 +669,6 @@ class SimulatorApp(ctk.CTk):
         menubar = Menu(self)
         self.config(menu=menubar)
 
-        # File
         file_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Clear Canvas", command=self._clear_canvas)
@@ -702,12 +679,10 @@ class SimulatorApp(ctk.CTk):
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.destroy)
 
-        # Edit
         edit_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Edit", menu=edit_menu)
         edit_menu.add_command(label="Settings…", command=self.open_settings)
 
-        # View
         view_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
 
@@ -718,14 +693,12 @@ class SimulatorApp(ctk.CTk):
             command=lambda: self.toggle_colorblind(self.colorblind_var.get()),
         )
 
-        # Simulation
         sim_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Simulation", menu=sim_menu)
         sim_menu.add_command(label="Play", command=self.play_sim)
         sim_menu.add_command(label="Pause", command=self.pause_sim)
         sim_menu.add_command(label="Reset", command=self.reset_sim)
 
-        # Help
         help_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="About", command=self._show_about)
@@ -776,7 +749,6 @@ class SimulatorApp(ctk.CTk):
         settings_window.lift()
         settings_window.after(10, settings_window.lift)
 
-        # Dynamic JSON Theme Dropdown Selection & Reload Button Frame
         ctk.CTkLabel(
             settings_window, text="UI Theme Palette:", font=("Arial", 11, "bold")
         ).pack(padx=20, pady=(15, 2), anchor="w")
@@ -794,7 +766,6 @@ class SimulatorApp(ctk.CTk):
             theme_dropdown.set(self.current_theme_name)
         theme_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        # Hot-Reload Themes Button
         btn_reload = ctk.CTkButton(
             theme_row,
             text="🔄 Reload",
@@ -804,7 +775,6 @@ class SimulatorApp(ctk.CTk):
         btn_reload.pack(side="right")
         ToolTip(btn_reload, "Scan themes/ folder for newly added or edited JSON theme files.")
 
-        # Dark Mode Override Toggle
         dark_var = ctk.BooleanVar(value=self.settings["dark_mode"])
         ctk.CTkCheckBox(
             settings_window,
@@ -834,14 +804,13 @@ class SimulatorApp(ctk.CTk):
         ransom.grab_set()
         ransom.focus_force()
         
-        # Hazard dark red background theme
         ransom.configure(fg_color="#1a0000")
 
         ctk.CTkLabel(
             ransom,
             text="📎 IT LOOKS LIKE YOU'RE BEING RANSOMED!",
             font=("Arial", 14, "bold"),
-            text_color="#FF1744"  # Bright alarm red header
+            text_color="#FF1744"
         ).pack(pady=(20, 10))
 
         msg = (
@@ -855,7 +824,7 @@ class SimulatorApp(ctk.CTk):
             ransom, 
             text=msg, 
             font=("Arial", 11), 
-            text_color="#FFFFFF",  # High-contrast white text for readability
+            text_color="#FFFFFF",
             justify="center", 
             wraplength=360
         ).pack(pady=10)
@@ -891,7 +860,6 @@ class SimulatorApp(ctk.CTk):
             self.loop_job = None
 
     def reset_sim(self):
-        # Easter egg: 3 rapid reset clicks triggers Clippy's ransomware prank
         self.reset_click_count = getattr(self, 'reset_click_count', 0) + 1
         if self.reset_click_count == 3:
             self.reset_click_count = 0
@@ -955,7 +923,6 @@ class SimulatorApp(ctk.CTk):
             ai_mode=self.ai_mode_menu.get(),
         )
 
-        # ── CRITICAL: Advance PDU packet animation frames on every step tick ──
         if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
             self.graph.pdu_engine.update_packets()
 
@@ -1018,6 +985,7 @@ class SimulatorApp(ctk.CTk):
             width=120,
             command=dialog.destroy,
         ).pack(pady=(15, 10))
+
 
 if __name__ == "__main__":
     app = SimulatorApp()
