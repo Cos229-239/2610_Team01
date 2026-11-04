@@ -185,6 +185,11 @@ class TelemetryPanel(ctk.CTkFrame):
         self.log_box.see("end")
         self._update_indicator()
 
+    def append_raw_event(self, source: str, message: str):
+        """Appends a raw event or system log message directly to the telemetry text box."""
+        self.log_box.insert("end", f"[{source}] {message}\n")
+        self.log_box.see("end")
+
     def show_snapshot(self, data: TelemetryData, history_index: int):
         """Called when user jumps to a past step – updates metrics and gauge only."""
         self._update_metrics_and_gauge(data)
