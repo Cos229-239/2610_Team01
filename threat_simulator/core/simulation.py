@@ -2,10 +2,9 @@ import random
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple, Optional
-
 from core.node_types import NODE_TYPES
 from core.topology import NetworkGraph, calculate_password_search_space
-from core.threat_modules import MetasploitAttack, GeraldTheSlightFrayer, DDoSAttack
+from core.threat_modules import MetasploitAttack, GeraldTheSlightFrayer
 
 # Attempt C++ module import with graceful fallback
 try:
@@ -45,6 +44,7 @@ class TelemetryData:
             f" └── Threat Level: {self.threat_level_pct:.1f}%\n"
             f"{events_section}\n"
         )
+        
 
 
 @dataclass
@@ -61,11 +61,9 @@ class SimulationEngine:
         self.total_recovered_count: int = 0
         self.history: List[SimSnapshot] = []
         self.history_index: int = -1
-        
         # Initialize threat module instances
         self.msf_module = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=45)
         self.gerald_module = GeraldTheSlightFrayer()
-        self.ddos_module = DDoSAttack(botnet_size=1000, bandwidth_gbps=50.0)
 
     def reset(self) -> None:
         self.step_counter = 0
@@ -101,89 +99,6 @@ class SimulationEngine:
     def can_step_forward(self) -> bool:
         return self.history_index < len(self.history) - 1
 
-    # ------------------------------------------------------------------
-    # PDU PACKET TRACER ANIMATION HELPER
-    # ------------------------------------------------------------------
-
-    def _spawn_pdu_packet(self, graph: NetworkGraph, source_idx: int, target_idx: int, pdu_type: str):
-        """Spawns an animated PDU packet on the graph's PduEngine for canvas rendering."""
-        if hasattr(graph, "pdu_engine") and graph.pdu_engine and hasattr(graph.pdu_engine, "spawn_pdu"):
-            if 0 <= source_idx < len(graph.nodes) and 0 <= target_idx < len(graph.nodes):
-                # Find the connecting edge index between source and target
-                edge_idx = None
-                for idx, edge in enumerate(graph.edges):
-                    if (edge.u == source_idx and edge.v == target_idx) or (edge.u == target_idx and edge.v == source_idx):
-                        edge_idx = idx
-                        break
-
-                if edge_idx is not None:
-                    graph.pdu_engine.spawn_pdu(
-                        src_idx=source_idx,
-                        dst_idx=target_idx,
-                        edge_idx=edge_idx,
-                        protocol=pdu_type,
-                        speed=0.04
-                    )
-
-    # ------------------------------------------------------------------
-    # MANUAL THREAT MODULE TRIGGERS
-    # ------------------------------------------------------------------
-
-    def trigger_metasploit_manual(self, graph: NetworkGraph, target_node_idx: Optional[int] = None) -> List[str]:
-        """Executes a manual Metasploit lateral movement attack against a target node."""
-        if not graph or not graph.nodes:
-            return ["Metasploit trigger failed: No active graph nodes."]
-
-        target_idx = target_node_idx if target_node_idx is not None else 0
-        target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
-        target_node = graph.nodes[target_idx]
-
-        source_idx = 0
-        source_node = graph.nodes[source_idx] if graph.nodes else target_node
-        self.msf_module.execute(source_node=source_node, target_node=target_node)
-        target_node.status = "INFECTED"
-
-        # Spawn visual infection PDU packet
-        self._spawn_pdu_packet(graph, source_idx, target_idx, "INFECT")
-
-        return [f"🐉 Metasploit payload breached Node {target_idx} ({getattr(target_node, 'id', target_idx)})."]
-
-    def trigger_gerald_manual(self, graph: NetworkGraph) -> List[str]:
-        """Executes a manual Gerald rainbow table cracking burst across active firewalls."""
-        if not graph or not graph.edges:
-            return ["Gerald scan finished: No network edges found."]
-
-        cracked_count = 0
-        for edge in graph.edges:
-            if getattr(edge, "is_firewall", False):
-                edge.is_firewall = False
-                edge.crack_progress = 1.0
-                edge.crack_attempts = getattr(edge, "required_attempts", 1000)
-                edge.status = "INFECTED"
-                cracked_count += 1
-
-        if cracked_count > 0:
-            return [f"⚡ Gerald Rainbow Table burst cracked {cracked_count} firewall credential(s)."]
-        return ["⚡ Gerald scanned hashes, but no active firewalls were detected."]
-
-    def trigger_ddos_manual(self, graph: NetworkGraph, target_node_idx: Optional[int] = None) -> List[str]:
-        """Executes a volumetric DDoS attack against a selected node, overwhelming its buffers."""
-        if not graph or not graph.nodes:
-            return ["DDoS trigger failed: No active graph nodes."]
-
-        target_idx = target_node_idx if target_node_idx is not None else 0
-        target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
-        
-        # Spawn attack flood packets from node 0 to the target
-        self._spawn_pdu_packet(graph, 0, target_idx, "INFECT")
-
-        event_msg = self.ddos_module.execute(graph.nodes[target_idx])
-        return [event_msg]
-
-    def msf_attack_triggered(self, inf_idx: int, graph: NetworkGraph, effective_inf_rate: float) -> bool:
-        """Triggers probabilistic Metasploit pivoting events during infected states."""
-        return random.random() < (effective_inf_rate * 0.25)
-
     def _calculate_target_priority(
         self,
         target_idx: int,
@@ -204,6 +119,93 @@ class SimulationEngine:
         )
         return ((uninfected_neighbors + 1) * device_weight) / max(0.5, resistance)
 
+    def trigger_metasploit_manual(self, graph: NetworkGraph) -> List[str]:
+        """Manually trigger Metasploit lateral movement across infected nodes."""
+        events = []
+        currently_infected = [i for i, node in enumerate(graph.nodes) if node.status == "INFECTED" or node.is_patient_zero]
+        
+        if not currently_infected:
+            return ["Metasploit: No infected nodes available to pivot from."]
+
+        for inf_idx in currently_infected:
+            inf_node = graph.nodes[inf_idx]
+            node_id = getattr(inf_node, 'id', f"Node-{inf_idx}")
+            events.append(f"Metasploit: Manual lateral pivot & exploit executed from {node_id}")
+            
+        return events
+
+    def trigger_gerald_manual(self, graph: NetworkGraph) -> List[str]:
+        """Manually trigger Gerald password and firewall hash cracking burst."""
+        events = []
+        firewalls_found = False
+
+        for edge in graph.edges:
+            if getattr(edge, "is_firewall", False):
+                firewalls_found = True
+                req_attempts = getattr(edge, "required_attempts", 0)
+                if req_attempts <= 0:
+                    req_attempts = calculate_password_search_space(edge.password)
+                    edge.required_attempts = req_attempts
+
+                # Massive cracking burst on button click
+                edge.crack_attempts = getattr(edge, "crack_attempts", 0) + 35000
+                edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
+                
+                target_name = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
+                events.append(f"Gerald: Manual hash crack burst on Node {target_name} ({int(edge.crack_progress * 100)}%)")
+
+                if edge.crack_progress >= 1.0:
+                    edge.is_firewall = False
+                    edge.crack_progress = 0.0
+                    edge.crack_attempts = 0
+                    edge.password = ""
+                    edge.status = "INFECTED"
+                    events.append(f"Gerald: Firewall breached and password cracked on Node {target_name}!")
+
+        if not firewalls_found:
+            events.append("Gerald: No active firewalls remaining in topology.")
+            
+        return events
+    def trigger_ddos_manual(self, graph: NetworkGraph, target_node_idx: int = 0) -> List[str]:
+        """Manually trigger a volumetric DDoS flood on a target node."""
+        events = []
+        if not graph.nodes:
+            return ["DDoS: No nodes available in topology."]
+        
+        target_idx = min(target_node_idx, len(graph.nodes) - 1)
+        target_node = graph.nodes[target_idx]
+        node_id = getattr(target_node, 'id', f"Node-{target_idx}")
+        
+        target_node.status = "INFECTED"
+        events.append(f"DDoS: Massive volumetric flood targeted and overwhelmed Node {node_id}.")
+        return events
+
+    def trigger_nuke_all(self, graph: NetworkGraph) -> List[str]:
+        """Fires all threat modules simultaneously and triggers the logic bomb."""
+        events = []
+        
+        # 1. Execute Metasploit lateral movement
+        events.extend(self.trigger_metasploit_manual(graph))
+        
+        # 2. Execute Gerald credential cracking
+        events.extend(self.trigger_gerald_manual(graph))
+        
+        # 3. Execute DDoS flood
+        events.extend(self.trigger_ddos_manual(graph, target_node_idx=0))
+        
+        # 4. Logic Bomb detonation sequence
+        bombed = 0
+        for node in graph.nodes:
+            if getattr(node, 'status', 'HEALTHY') == "HEALTHY":
+                node.status = "INFECTED"
+                bombed += 1
+                if bombed >= 3:  # Force-infect up to 3 additional nodes
+                    break
+                    
+        events.append(f"💣 Logic Bomb detonated - forcibly infected {bombed} additional node(s).")
+        events.append("☢ NUKE SALVO COMPLETE")
+        
+        return events
     def step(
         self,
         graph: NetworkGraph,
@@ -211,7 +213,7 @@ class SimulationEngine:
         def_power: float,
         ai_mode: str = "Strategic AI",
     ) -> TelemetryData:
-        """Executes a single simulation tick with dynamic password cracking and escalating infection potency."""
+        """Executes a single simulation tick with escalating infection potency."""
         self.step_counter += 1
         total_nodes = graph.node_count
         step_events: List[str] = []
@@ -238,87 +240,38 @@ class SimulationEngine:
         currently_infected = {
             i
             for i, node in enumerate(graph.nodes)
-            if getattr(node, "status", "") == "INFECTED" or getattr(node, "is_patient_zero", False)
+            if node.status == "INFECTED" or node.is_patient_zero
         }
         if not currently_infected and graph.nodes:
-            p0_idx = getattr(graph, "get_patient_zero_index", lambda: 0)()
-            if p0_idx < len(graph.nodes):
-                graph.nodes[p0_idx].status = "INFECTED"
-                currently_infected.add(p0_idx)
+            p0_idx = graph.get_patient_zero_index()
+            graph.nodes[p0_idx].status = "INFECTED"
+            currently_infected.add(p0_idx)
 
         infected_cnt = len(currently_infected)
         capture_ratio = infected_cnt / float(max(1, total_nodes))
 
+        # Base time escalation (+2% per tick, capped at 1.5x)
         time_escalation = 1.0 + min(0.5, self.step_counter * 0.02)
+
+        # Node capture multiplier: Exponential curve scaling from 1.0x up to 100.0x
         capture_escalation = 1.0 + (99.0 * (capture_ratio ** 1.5))
 
+        # Combined AI threat escalation multiplier capped at 100x max strength
         escalation_factor = min(100.0, time_escalation * capture_escalation)
         effective_inf_rate = min(1.0, inf_rate * (escalation_factor ** 0.35))
 
+        # Defense fatigue under persistent infection
         defense_fatigue = max(0.2, 1.0 - (self.step_counter * 0.015))
         effective_def_power = def_power * defense_fatigue
 
-        # -------------------------------------------------------------
-        # ADAPTIVE FIREWALL PASSWORD CRACKING PHASE (GERALD)
-        # -------------------------------------------------------------
-        for edge in graph.edges:
-            if getattr(edge, "is_firewall", False):
-                u_inf = graph.nodes[edge.u].status == "INFECTED"
-                v_inf = graph.nodes[edge.v].status == "INFECTED"
-                
-                if u_inf or v_inf:
-                    req_attempts = getattr(edge, "required_attempts", 0)
-                    if req_attempts <= 0:
-                        req_attempts = calculate_password_search_space(getattr(edge, "password", "123"))
-                        edge.required_attempts = req_attempts
-
-                    base_tries = 5000
-                    tries = int(base_tries * effective_inf_rate * (escalation_factor ** 1.3))
-                    
-                    edge.crack_attempts = getattr(edge, "crack_attempts", 0) + tries
-                    edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
-
-                    target_name = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
-                    step_events.append(f"Gerald: Cracking hash on Node {target_name} ({int(edge.crack_progress * 100)}%)")
-
-                    if edge.crack_progress >= 1.0:
-                        edge.is_firewall = False
-                        edge.crack_progress = 0.0
-                        edge.crack_attempts = 0
-                        edge.password = ""
-                        edge.status = "INFECTED"
-                        step_events.append(f"Gerald: Successfully cracked password and breached firewall on Node {target_name}!")
-
-        # -------------------------------------------------------------
-        # METASPLOIT LATERAL PIVOTING & EXPLOITATION
-        # -------------------------------------------------------------
-        for inf_idx in list(currently_infected):
-            inf_node = graph.nodes[inf_idx]
-            node_id = getattr(inf_node, 'id', f"Node-{inf_idx}")
-            if self.msf_attack_triggered(inf_idx, graph, effective_inf_rate):
-                step_events.append(f"Metasploit: Executed automated lateral pivot & SMB exploit from {node_id}")
-
-        # Build Adjacency Map & Track Cross-Subnet Edge Boundaries
+        # 1. Build Adjacency Map (Excludes Intact Active Firewalls)
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
-        cross_subnet_edges = set()
-        
         for edge in graph.edges:
-            if edge.u >= total_nodes or edge.v >= total_nodes:
-                continue
-
-            node_u = graph.nodes[edge.u]
-            node_v = graph.nodes[edge.v]
-            same_subnet = (getattr(node_u, "subnet", "") == getattr(node_v, "subnet", ""))
-
             if getattr(edge, "is_firewall", False):
                 continue
-
-            adj[edge.u].append(edge.v)
-            adj[edge.v].append(edge.u)
-
-            if not same_subnet:
-                cross_subnet_edges.add((edge.u, edge.v))
-                cross_subnet_edges.add((edge.v, edge.u))
+            if edge.u < total_nodes and edge.v < total_nodes:
+                adj[edge.u].append(edge.v)
+                adj[edge.v].append(edge.u)
 
         # -------------------------------------------------------------
         # PHASE A: INFECTION SPREAD
@@ -328,14 +281,13 @@ class SimulationEngine:
             for neighbor_idx in adj[inf_idx]:
                 if (
                     graph.nodes[neighbor_idx].status in ("HEALTHY", "WARNING")
-                    and not getattr(graph.nodes[neighbor_idx], "is_patient_zero", False)
+                    and not graph.nodes[neighbor_idx].is_patient_zero
                 ):
                     attack_candidates[neighbor_idx] = (
                         attack_candidates.get(neighbor_idx, 0) + 1
                     )
 
         newly_infected = set()
-        
         if attack_candidates:
             if ai_mode == "Strategic AI":
                 ranked_targets: List[Tuple[int, float]] = [
@@ -348,79 +300,54 @@ class SimulationEngine:
                     for t_idx in attack_candidates
                 ]
                 ranked_targets.sort(key=lambda x: x[1], reverse=True)
-
                 max_breaches = max(1, int(effective_inf_rate * (4 + int(escalation_factor * 0.1))))
-
-                for target_idx, _ in ranked_targets:
+                best_target_idx, _ = ranked_targets[0]
+                best_node = graph.nodes[best_target_idx]
+                device_type = getattr(best_node, "node_type", "PC")
+                type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
+                type_mult = type_cfg.defense_multiplier if type_cfg else 1.0
+                attack_pressure = effective_inf_rate * (
+                    1.0 + 0.5 * attack_candidates[best_target_idx]
+                )
+                block_chance = max(
+                    0.05,
+                    min(
+                        0.85,
+                        (effective_def_power * 0.6 * type_mult)
+                        - (attack_pressure * 0.2),
+                    ),
+                )
+                if (
+                    random.random() < attack_pressure
+                    and random.random() >= block_chance
+                ):
+                    newly_infected.add(best_target_idx)
+                    step_events.append(f"Strategic AI: Successfully breached high-priority target Node {getattr(best_node, 'id', best_target_idx)}")
+                for target_idx, _ in ranked_targets[1:]:
                     if len(newly_infected) >= max_breaches:
                         break
-
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
-
-                    attack_pressure = effective_inf_rate * (
-                        1.0 + 0.5 * attack_candidates[target_idx]
-                    )
-
-                    is_cross = any(
-                        (src, target_idx) in cross_subnet_edges
-                        for src in currently_infected
-                    )
-                    if is_cross:
-                        attack_pressure *= 0.35
-
-                    block_chance = max(
-                        0.05,
-                        min(
-                            0.85,
-                            (effective_def_power * 0.6 * t_mult) - (attack_pressure * 0.2),
-                        ),
-                    )
-
-                    if random.random() < attack_pressure and random.random() >= block_chance:
+                    t_block = min(0.90, effective_def_power * 0.7 * t_mult)
+                    if (
+                        random.random() < effective_inf_rate
+                        and random.random() >= t_block
+                    ):
                         newly_infected.add(target_idx)
-                        
-                        # Spawn synchronized PDU packet from source to target
-                        active_source = next((src for src in currently_infected if target_idx in adj[src]), list(currently_infected)[0])
-                        self._spawn_pdu_packet(graph, active_source, target_idx, "INFECT")
-
-                        target_id = getattr(t_node, 'id', target_idx)
-                        step_events.append(
-                            f"Strategic AI: Breached {'cross-subnet ' if is_cross else ''}target Node {target_id}"
-                        )
-
             else:
-                # Uniform mode
                 for target_idx in attack_candidates:
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
-
-                    chance = effective_inf_rate
-
-                    is_cross = any(
-                        (src, target_idx) in cross_subnet_edges
-                        for src in currently_infected
-                    )
-                    if is_cross:
-                        chance *= 0.35
-
                     block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
-
-                    if random.random() < chance and random.random() >= block_chance:
+                    if (
+                        random.random() < effective_inf_rate
+                        and random.random() >= block_chance
+                    ):
                         newly_infected.add(target_idx)
-                        
-                        # Spawn synchronized PDU packet from source to target
-                        active_source = next((src for src in currently_infected if target_idx in adj[src]), list(currently_infected)[0])
-                        self._spawn_pdu_packet(graph, active_source, target_idx, "INFECT")
-
-                        target_id = getattr(t_node, 'id', target_idx)
-                        step_events.append(
-                            f"Uniform AI: Breached {'cross-subnet ' if is_cross else ''}target Node {target_id}"
-                        )
 
         # -------------------------------------------------------------
         # PHASE B: RETAKING & NEUTRALIZING INFECTED NODES
@@ -429,7 +356,7 @@ class SimulationEngine:
         recovery_chance = max(0.02, effective_def_power * 0.35)
         for inf_idx in list(currently_infected):
             node = graph.nodes[inf_idx]
-            if getattr(node, "is_patient_zero", False):
+            if node.is_patient_zero:
                 healthy_neighbors = sum(
                     1
                     for n_idx in adj[inf_idx]

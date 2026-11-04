@@ -21,7 +21,87 @@ from ui.tooltip import ToolTip
 from ui.assistant import ClippyAssistant
 from ui.pdu_controls import PDUControlPanel
 from utils.theme_loader import ThemeManager
+# --- DEPENDENCY-FREE THEME AUDIO MANAGER ---
+import os
+import platform
+import subprocess
+import threading
+import time
 
+class SimulationThemeManager:
+    def __init__(self, wav_name: str = "Midnight_Override.wav"):
+        # Check standard relative paths for the root assets folder
+        possible_paths = [
+            os.path.join("assets", wav_name),
+            os.path.join("..", "assets", wav_name),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", wav_name)),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", wav_name))
+        ]
+        
+        self.wav_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                self.wav_path = path
+                break
+                
+        self.enabled = self.wav_path is not None
+        self._stop_event = threading.Event()
+        self._thread = None
+
+        if not self.enabled:
+            print(f"[Theme Warning] {wav_name} not found in any root assets folder!")
+        else:
+            print(f"[Theme Success] Loaded theme from: {self.wav_path}")
+
+    def start_theme(self):
+        """Plays Midnight_Override.wav in a looping background thread with zero dependencies."""
+        if not self.enabled or (self._thread and self._thread.is_alive()):
+            return
+
+        self._stop_event.clear()
+
+        def _play_loop():
+            system = platform.system()
+            while not self._stop_event.is_set():
+                try:
+                    if system == "Linux":
+                        # Try running aplay; suppress error clutter if ALSA sink is busy
+                        process = subprocess.run(
+                            ["aplay", "-q", self.wav_path],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            check=False
+                        )
+                        # If aplay failed immediately, wait a couple seconds before retrying
+                        if process.returncode != 0:
+                            time.sleep(3)
+                    elif system == "Darwin":
+                        subprocess.run(["afplay", self.wav_path], check=False)
+                    elif system == "Windows":
+                        import winsound
+                        winsound.PlaySound(self.wav_path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP)
+                        while not self._stop_event.is_set():
+                            time.sleep(1)
+                        winsound.PlaySound(None, 0)
+                        break
+                except Exception as e:
+                    print(f"[Theme Error] Playback exception: {e}")
+                    time.sleep(3)
+                
+                # Small breather between loop iterations
+                time.sleep(0.5)
+
+        self._thread = threading.Thread(target=_play_loop, daemon=True)
+        self._thread.start()
+
+    def stop_theme(self):
+        self._stop_event.set()
+        if platform.system() == "Windows":
+            try:
+                import winsound
+                winsound.PlaySound(None, 0)
+            except Exception:
+                pass
 
 class SimulatorApp(ctk.CTk):
     def __init__(self):
@@ -50,7 +130,14 @@ class SimulatorApp(ctk.CTk):
 
         self._build_ui()
         self._build_menu()
-
+# --- INITIALIZE AND START THE SIMULATION THEME ---
+        self.theme_manager_audio = SimulationThemeManager("Midnight_Override.wav")
+        self.theme_manager_audio.start_theme()
+        
+        # Initialize Desktop Interactive Assistant with live simulation context references
+        self.assistant = ClippyAssistant(
+            self, sim_engine=self.sim_engine, graph=self.graph
+        )
         # Initialize Desktop Interactive Assistant with live simulation context references
         self.assistant = ClippyAssistant(
             self, sim_engine=self.sim_engine, graph=self.graph
@@ -931,7 +1018,6 @@ class SimulatorApp(ctk.CTk):
             width=120,
             command=dialog.destroy,
         ).pack(pady=(15, 10))
-
 
 if __name__ == "__main__":
     app = SimulatorApp()
