@@ -12,6 +12,7 @@ if root_dir not in sys.path:
 
 from utils.exporter import export_simulation_summary
 from ui.cli_window import CiscoCLITerminal
+from ui.packet_inspector import PacketInspectorModal
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -338,10 +339,10 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
         if "show ip interface" in command.lower():
-            return "Interface                  IP-Address      OK? Method Status                Protocol\nFastEthernet0/0            192.168.1.1     YES manual up                    up"
+            return "Interface                 IP-Address      OK? Method Status                  Protocol\nFastEthernet0/0           192.168.1.1     YES manual up                     up"
 
         if "show ip route" in command.lower():
-            return "Codes: C - connected, S - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
+            return "Codes: C - connected, s - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
 
         return f"% Invalid command or syntax error at '{command}'"
 
@@ -546,6 +547,26 @@ class NetworkCanvas(ctk.CTkCanvas):
         world_x, world_y = self.screen_to_world(event.x, event.y)
         self.mouse_x = world_x
         self.mouse_y = world_y
+
+        # -------------------------------------------------------------
+        # 0. PACKET HIT-TEST: Check if user clicked an active PDU packet
+        # -------------------------------------------------------------
+        if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine and self.graph.pdu_engine.active_pdus:
+            for pdu in self.graph.pdu_engine.active_pdus:
+                if 0 <= pdu.src_node_idx < len(self.graph.nodes) and 0 <= pdu.dst_node_idx < len(self.graph.nodes):
+                    n1 = self.graph.nodes[pdu.src_node_idx]
+                    n2 = self.graph.nodes[pdu.dst_node_idx]
+                    
+                    s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
+                    s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
+                    
+                    px = s1_x + (s2_x - s1_x) * pdu.progress
+                    py = s1_y + (s2_y - s1_y) * pdu.progress
+                    
+                    # Hit test threshold: within 16 pixels of packet envelope on canvas
+                    if abs(event.x - px) <= 16 and abs(event.y - py) <= 16:
+                        PacketInspectorModal(self.winfo_toplevel(), pdu, self.graph)
+                        return
 
         if self.mode == "FIREWALL":
             for edge_idx, (bx1, by1, bx2, by2) in self.firewall_btn_bounds.items():
