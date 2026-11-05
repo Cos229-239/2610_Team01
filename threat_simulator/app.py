@@ -48,15 +48,36 @@ class SimulationThemeManager:
         self.enabled = self.wav_path is not None
         self._stop_event = threading.Event()
         self._thread = None
+        self.volume = 0.7
+        self.music_enabled = True
 
         if not self.enabled:
             print(f"[Theme Warning] {wav_name} not found in any root assets folder!")
         else:
             print(f"[Theme Success] Loaded theme from: {self.wav_path}")
 
+    def set_volume(self, volume: float):
+        """Volume is expected in range 0.0 - 1.0"""
+        self.volume = max(0.0, min(1.0, volume))
+        # Real volume control isn't possible with winsound/aplay/afplay,
+        # so we treat 0 as mute and >0 as play.
+        if self.volume <= 0.0:
+            self.stop_theme()
+        elif self.music_enabled and not (self._thread and self._thread.is_alive()):
+            self.start_theme()
+
+    def set_enabled(self, enabled: bool):
+        self.music_enabled = enabled
+        if enabled and self.volume > 0.0:
+            self.start_theme()
+        else:
+            self.stop_theme()
+
     def start_theme(self):
         """Plays Midnight_Override.wav in a looping background thread with zero dependencies."""
-        if not self.enabled or (self._thread and self._thread.is_alive()):
+        if not self.enabled or not self.music_enabled or self.volume <= 0.0:
+            return
+        if self._thread and self._thread.is_alive():
             return
 
         self._stop_event.clear()
@@ -124,6 +145,8 @@ class SimulatorApp(ctk.CTk):
             "dark_mode": False,
             "cyberpunk_mode": False,
             "active_theme": self.current_theme_name,
+            "music_enabled": True,
+            "music_volume": 0.7,            # 0.0 - 1.0
         }
 
         self._build_ui()
@@ -131,7 +154,8 @@ class SimulatorApp(ctk.CTk):
 
         # --- INITIALIZE AND START THE SIMULATION THEME ---
         self.theme_manager_audio = SimulationThemeManager("Midnight_Override.wav")
-        self.theme_manager_audio.start_theme()
+        self.theme_manager_audio.set_volume(self.settings["music_volume"])
+        self.theme_manager_audio.set_enabled(self.settings["music_enabled"])
 
         # Initialize Desktop Interactive Assistant with live simulation context references
         self.assistant = ClippyAssistant(
@@ -740,15 +764,15 @@ class SimulatorApp(ctk.CTk):
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
-        settings_window.geometry("360x260")
+        settings_window.geometry("380x360")          # taller for the new controls
         settings_window.resizable(False, False)
-
         settings_window.transient(self)
         settings_window.grab_set()
         settings_window.focus_force()
         settings_window.lift()
         settings_window.after(10, settings_window.lift)
 
+        # ---------- Theme section ----------
         ctk.CTkLabel(
             settings_window, text="UI Theme Palette:", font=("Arial", 11, "bold")
         ).pack(padx=20, pady=(15, 2), anchor="w")
@@ -775,13 +799,60 @@ class SimulatorApp(ctk.CTk):
         btn_reload.pack(side="right")
         ToolTip(btn_reload, "Scan themes/ folder for newly added or edited JSON theme files.")
 
+        # ---------- Dark Mode ----------
         dark_var = ctk.BooleanVar(value=self.settings["dark_mode"])
         ctk.CTkCheckBox(
             settings_window,
             text="Dark Mode Override",
             variable=dark_var,
             command=lambda: self.toggle_dark_mode(dark_var.get()),
-        ).pack(padx=20, pady=10, anchor="w")
+        ).pack(padx=20, pady=8, anchor="w")
+
+        # ---------- Music section ----------
+        ctk.CTkLabel(
+            settings_window, text="Music / Theme Audio:", font=("Arial", 11, "bold")
+        ).pack(padx=20, pady=(12, 4), anchor="w")
+
+        music_enabled_var = ctk.BooleanVar(value=self.settings.get("music_enabled", True))
+
+        def on_music_toggle():
+            enabled = music_enabled_var.get()
+            self.settings["music_enabled"] = enabled
+            self.theme_manager_audio.set_enabled(enabled)
+
+        ctk.CTkCheckBox(
+            settings_window,
+            text="Enable Background Music",
+            variable=music_enabled_var,
+            command=on_music_toggle,
+        ).pack(padx=20, pady=(0, 6), anchor="w")
+
+        # Volume row
+        vol_frame = ctk.CTkFrame(settings_window, fg_color="transparent")
+        vol_frame.pack(padx=20, pady=(0, 10), fill="x")
+
+        ctk.CTkLabel(vol_frame, text="Volume:", width=60).pack(side="left")
+
+        volume_label = ctk.CTkLabel(vol_frame, text=f"{int(self.settings.get('music_volume', 0.7)*100)}%")
+        volume_label.pack(side="right", padx=(8, 0))
+
+        def on_volume_change(value):
+            vol = float(value)
+            self.settings["music_volume"] = vol
+            volume_label.configure(text=f"{int(vol * 100)}%")
+            self.theme_manager_audio.set_volume(vol)
+
+        volume_slider = ctk.CTkSlider(
+            vol_frame,
+            from_=0.0,
+            to=1.0,
+            number_of_steps=20,
+            command=on_volume_change,
+        )
+        volume_slider.set(self.settings.get("music_volume", 0.7))
+        volume_slider.pack(side="left", fill="x", expand=True, padx=(8, 0))
+
+        ToolTip(volume_slider, "0% = mute, higher values play the theme music.")
 
     def toggle_dark_mode(self, enabled: bool):
         self.settings["dark_mode"] = enabled
