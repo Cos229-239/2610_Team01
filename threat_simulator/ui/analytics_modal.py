@@ -1,15 +1,18 @@
 import customtkinter as ctk
+from tkinter import filedialog
 import matplotlib
 matplotlib.use("TkAgg")
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+from ui.tooltip import ToolTip
 
 
 class AnalyticsModal(ctk.CTkToplevel):
     def __init__(self, master, sim_engine):
         super().__init__(master)
         self.title("📊 Live Simulation Analytics & Telemetry")
-        self.geometry("720x500")
+        self.geometry("720x580")  # Increased height to accommodate toolbar
         self.resizable(False, False)
         self.transient(master)
 
@@ -26,25 +29,79 @@ class AnalyticsModal(ctk.CTkToplevel):
         ).pack(pady=(15, 5))
 
         # Setup Matplotlib figure & axes
-        self.fig = Figure(figsize=(7.0, 3.8), facecolor="#141414")
+        self.fig = Figure(figsize=(7.0, 3.5), facecolor="#141414")
         self.ax = self.fig.add_subplot(111)
         self.ax.set_facecolor("#1e1e1e")
         self.ax2 = self.ax.twinx()
 
         self.canvas_agg = FigureCanvasTkAgg(self.fig, master=self)
-        self.canvas_agg.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=10)
+        self.canvas_agg.get_tk_widget().pack(fill="both", expand=True, padx=15, pady=(10, 0))
+
+        # --- EMBED MATPLOTLIB NAVIGATION TOOLBAR ---
+        toolbar_frame = ctk.CTkFrame(self, fg_color="transparent")
+        toolbar_frame.pack(fill="x", padx=15, pady=(0, 5))
+
+        self.toolbar = NavigationToolbar2Tk(self.canvas_agg, toolbar_frame)
+        self.toolbar.update()
+        
+        # Style toolbar buttons to match the dark theme
+        self.toolbar.config(background="#1e1e1e")
+        for child in self.toolbar.winfo_children():
+            try:
+                child.config(background="#2b2b2b", fg="white", activebackground="#3b3b3b")
+            except Exception:
+                pass
+        # -------------------------------------------
 
         # Draw initial data
         self.refresh()
 
-        # Close button
-        ctk.CTkButton(
-            self, 
+        # Bottom Button Frame
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=(5, 15))
+
+        # Export PNG Button
+        self.btn_export = ctk.CTkButton(
+            btn_frame, 
+            text="💾 Export Chart PNG", 
+            fg_color="#00838F", 
+            hover_color="#006064", 
+            command=self.export_chart
+        )
+        self.btn_export.pack(side="left", padx=10)
+        ToolTip(self.btn_export, "Save a high-resolution PNG image report of the live analytics chart.")
+
+        # Close Button
+        self.btn_close = ctk.CTkButton(
+            btn_frame, 
             text="Close Analytics", 
             fg_color="#333333", 
             hover_color="#444444", 
             command=self.destroy
-        ).pack(pady=(0, 15))
+        )
+        self.btn_close.pack(side="left", padx=10)
+        ToolTip(self.btn_close, "Close the analytics window.")
+
+    def export_chart(self):
+        """Opens a file save dialog and exports the Matplotlib figure as a high-res PNG."""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG Image", "*.png"), ("All Files", "*.*")],
+            initialfile="simulation_analytics_report.png",
+            title="Save Analytics Chart"
+        )
+        if file_path:
+            try:
+                self.fig.savefig(
+                    file_path, 
+                    dpi=300, 
+                    facecolor=self.fig.get_facecolor(), 
+                    edgecolor='none',
+                    bbox_inches='tight'
+                )
+                print(f"[Analytics] Successfully exported chart to {file_path}")
+            except Exception as e:
+                print(f"[Analytics Error] Failed to export chart: {e}")
 
     def refresh(self):
         """Redraws the Matplotlib chart with Infected Count, Threat %, and Escalation Factor (x)."""
