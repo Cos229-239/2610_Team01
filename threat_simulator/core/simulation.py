@@ -119,7 +119,7 @@ class SimulationEngine:
         )
         return ((uninfected_neighbors + 1) * device_weight) / max(0.5, resistance)
 
-    def trigger_metasploit_manual(self, graph: NetworkGraph) -> List[str]:
+    def trigger_metasploit_manual(self, graph: NetworkGraph, target_node_idx: Optional[int] = None) -> List[str]:
         """Manually trigger Metasploit lateral movement across infected nodes."""
         events = []
         currently_infected = [i for i, node in enumerate(graph.nodes) if node.status == "INFECTED" or node.is_patient_zero]
@@ -127,10 +127,16 @@ class SimulationEngine:
         if not currently_infected:
             return ["Metasploit: No infected nodes available to pivot from."]
 
+        target_idx = target_node_idx if target_node_idx is not None else currently_infected[0]
+        target_idx = max(0, min(target_idx, len(graph.nodes) - 1))
+        target_node = graph.nodes[target_idx]
+        target_node.status = "INFECTED"
+
         for inf_idx in currently_infected:
             inf_node = graph.nodes[inf_idx]
             node_id = getattr(inf_node, 'id', f"Node-{inf_idx}")
-            events.append(f"Metasploit: Manual lateral pivot & exploit executed from {node_id}")
+            target_id = getattr(target_node, 'id', f"Node-{target_idx}")
+            events.append(f"Metasploit: Manual lateral pivot & exploit executed from {node_id} to {target_id}")
             
         return events
 
@@ -166,6 +172,7 @@ class SimulationEngine:
             events.append("Gerald: No active firewalls remaining in topology.")
             
         return events
+
     def trigger_ddos_manual(self, graph: NetworkGraph, target_node_idx: int = 0) -> List[str]:
         """Manually trigger a volumetric DDoS flood on a target node."""
         events = []
@@ -206,6 +213,7 @@ class SimulationEngine:
         events.append("☢ NUKE SALVO COMPLETE")
         
         return events
+
     def step(
         self,
         graph: NetworkGraph,
