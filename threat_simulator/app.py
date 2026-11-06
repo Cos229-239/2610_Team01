@@ -59,8 +59,6 @@ class SimulationThemeManager:
     def set_volume(self, volume: float):
         """Volume is expected in range 0.0 - 1.0"""
         self.volume = max(0.0, min(1.0, volume))
-        # Real volume control isn't possible with winsound/aplay/afplay,
-        # so we treat 0 as mute and >0 as play.
         if self.volume <= 0.0:
             self.stop_theme()
         elif self.music_enabled and not (self._thread and self._thread.is_alive()):
@@ -124,15 +122,26 @@ class SimulationThemeManager:
 
 
 class SimulatorApp(ctk.CTk):
+    def open_analytics_modal(self):
+        """Opens or brings focus to the live Matplotlib analytics telemetry modal."""
+        from ui.analytics_modal import AnalyticsModal
+        if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
+            self.active_analytics_modal.lift()
+            self.active_analytics_modal.focus_force()
+            return
+
+        self.active_analytics_modal = AnalyticsModal(self, self.sim_engine)
+
     def __init__(self):
         super().__init__()
         self.title("Adaptive AI Outbreak & Threat Simulator")
-        self.geometry("1150x820")
+        self.geometry("1180x820")
 
         self.sim_engine = SimulationEngine()
         self.graph = NetworkGraph()
         self.is_running = False
         self.loop_job = None
+        self.active_analytics_modal = None
 
         # Dynamic Theme Engine Manager
         self.theme_manager = ThemeManager()
@@ -146,7 +155,7 @@ class SimulatorApp(ctk.CTk):
             "cyberpunk_mode": False,
             "active_theme": self.current_theme_name,
             "music_enabled": True,
-            "music_volume": 0.7,            # 0.0 - 1.0
+            "music_volume": 0.7,
         }
 
         self._build_ui()
@@ -318,6 +327,17 @@ class SimulatorApp(ctk.CTk):
             command=self.open_settings,
         ).grid(row=0, column=8, padx=5, pady=5)
 
+        self.btn_analytics = ctk.CTkButton(
+            top_ctrl,
+            text="📊 Analytics",
+            width=85,
+            fg_color="#00838F",
+            hover_color="#006064",
+            command=self.open_analytics_modal,
+        )
+        self.btn_analytics.grid(row=0, column=9, padx=5, pady=5)
+        ToolTip(self.btn_analytics, "Open live simulation telemetry analytics and outbreak graphs.")
+
         self.btn_assistant = ctk.CTkButton(
             top_ctrl,
             text="📎 Help",
@@ -326,7 +346,7 @@ class SimulatorApp(ctk.CTk):
             hover_color="#1565C0",
             command=self.toggle_assistant,
         )
-        self.btn_assistant.grid(row=0, column=9, padx=5, pady=5)
+        self.btn_assistant.grid(row=0, column=10, padx=5, pady=5)
 
         ToolTip(
             self.btn_assistant,
@@ -764,7 +784,7 @@ class SimulatorApp(ctk.CTk):
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
-        settings_window.geometry("380x360")          # taller for the new controls
+        settings_window.geometry("380x360")
         settings_window.resizable(False, False)
         settings_window.transient(self)
         settings_window.grab_set()
@@ -965,6 +985,8 @@ class SimulatorApp(ctk.CTk):
         if telemetry:
             self.net_canvas.render()
             self.telemetry_panel.show_snapshot(telemetry, new_index)
+            if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
+                self.active_analytics_modal.refresh()
 
     def step_forward(self):
         if not self.sim_engine.can_step_forward():
@@ -975,6 +997,8 @@ class SimulatorApp(ctk.CTk):
         if telemetry:
             self.net_canvas.render()
             self.telemetry_panel.show_snapshot(telemetry, new_index)
+            if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
+                self.active_analytics_modal.refresh()
 
     def jump_to_step(self, history_index: int):
         self.pause_sim()
@@ -982,6 +1006,8 @@ class SimulatorApp(ctk.CTk):
         if telemetry:
             self.net_canvas.render()
             self.telemetry_panel.show_snapshot(telemetry, history_index)
+            if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
+                self.active_analytics_modal.refresh()
 
     def run_loop(self):
         if not self.is_running:
@@ -999,6 +1025,11 @@ class SimulatorApp(ctk.CTk):
 
         self.net_canvas.render()
         self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+
+        # --- LIVE UPDATE ANALYTICS WINDOW IF OPEN ---
+        if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
+            self.active_analytics_modal.refresh()
+        # ---------------------------------------------
 
         total = telemetry.total_nodes
         infected = telemetry.infected_nodes
