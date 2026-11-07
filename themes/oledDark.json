@@ -1,0 +1,30 @@
+{
+  "$schema": "./theme_schema.json",
+  "name": "Oled Dark",
+  "author": "System",
+  "appearance_mode": "Dark",
+  "canvas_bg": "#333448",
+  "status_colors": {
+    "HEALTHY": "#70e000",
+    "WARNING": "#fb8b24",
+    "INFECTED": "#ff0054"
+  },
+  "edge_colors": {
+    "HEALTHY": "#70e000",
+    "WARNING": "#fb8b24",
+    "INFECTED": "#ff0054"
+  },
+  "pdu_colors": {
+    "ICMP": "#110e1b",
+    "ARP": "#110e1b",
+    "TCP": "#110e1b",
+    "INFECT": "#ff0054"
+  },
+  "clippy": {
+    "window_bg": "#242424",
+    "bubble_bg": "#333448",
+    "text_color": "#9a8c98",
+    "border_color": "#5D5F83",
+    "avatar": "[🤖 CYBER-CLIPPY]"
+  }
+}
