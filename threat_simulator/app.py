@@ -2,8 +2,10 @@ import os
 import sys
 import json
 import tkinter as tk
+import pygame
 from tkinter import Menu
 from typing import Dict, List, Optional, Tuple
+
 
 # Add project root directory to sys.path to resolve internal modules
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -45,23 +47,38 @@ class SimulationThemeManager:
                 self.wav_path = path
                 break
                 
-        self.enabled = self.wav_path is not None
-        self._stop_event = threading.Event()
-        self._thread = None
+        self.enabled = False
         self.volume = 0.7
         self.music_enabled = True
+        self._initialized = False
 
-        if not self.enabled:
-            print(f"[Theme Warning] {wav_name} not found in any root assets folder!")
-        else:
-            print(f"[Theme Success] Loaded theme from: {self.wav_path}")
+        if self.wav_path is None:
+            print(f"[Theme Warning] {wav_name} not found in any assets folder!")
+            return
+
+        try:
+            # Initialize only the mixer (no window needed)
+            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
+            pygame.mixer.music.load(self.wav_path)
+            pygame.mixer.music.set_volume(self.volume)
+            self.enabled = True
+            self._initialized = True
+            print(f"[Theme Success] Loaded theme with pygame: {self.wav_path}")
+        except Exception as e:
+            print(f"[Theme Error] Failed to initialize pygame mixer: {e}")
+            self.enabled = False
+
 
     def set_volume(self, volume: float):
-        """Volume is expected in range 0.0 - 1.0"""
-        self.volume = max(0.0, min(1.0, volume))
-        if self.volume <= 0.0:
+        """Set volume from 0.0 to 1.0 (real volume control)."""
+        self.volume = max(0.0, min(1.0, float(volume)))
+
+        if self._initialized:
+            pygame.mixer.music.set_volume(self.volume)
+
+        if self.volume <= 0.0 or not self.music_enabled:
             self.stop_theme()
-        elif self.music_enabled and not (self._thread and self._thread.is_alive()):
+        elif self.music_enabled:
             self.start_theme()
 
     def set_enabled(self, enabled: bool):
@@ -72,51 +89,30 @@ class SimulationThemeManager:
             self.stop_theme()
 
     def start_theme(self):
-        """Plays Midnight_Override.wav in a looping background thread with zero dependencies."""
-        if not self.enabled or not self.music_enabled or self.volume <= 0.0:
+        if not self.enabled or not self._initialized:
             return
-        if self._thread and self._thread.is_alive():
+        if not self.music_enabled or self.volume <= 0.0:
             return
 
-        self._stop_event.clear()
-
-        def _play_loop():
-            system = platform.system()
-            while not self._stop_event.is_set():
-                try:
-                    if system == "Linux":
-                        process = subprocess.run(
-                            ["aplay", "-q", self.wav_path],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            check=False
-                        )
-                        if process.returncode != 0:
-                            time.sleep(3)
-                    elif system == "Darwin":
-                        subprocess.run(["afplay", self.wav_path], check=False)
-                    elif system == "Windows":
-                        import winsound
-                        winsound.PlaySound(self.wav_path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP)
-                        while not self._stop_event.is_set():
-                            time.sleep(1)
-                        winsound.PlaySound(None, 0)
-                        break
-                except Exception as e:
-                    print(f"[Theme Error] Playback exception: {e}")
-                    time.sleep(3)
-                
-                time.sleep(0.5)
-
-        self._thread = threading.Thread(target=_play_loop, daemon=True)
-        self._thread.start()
+        try:
+            if not pygame.mixer.music.get_busy():
+                pygame.mixer.music.play(loops=-1)  # infinite loop
+        except Exception as e:
+            print(f"[Theme Error] Could not start music: {e}")
 
     def stop_theme(self):
-        self._stop_event.set()
-        if platform.system() == "Windows":
+        if self._initialized:
             try:
-                import winsound
-                winsound.PlaySound(None, 0)
+                pygame.mixer.music.stop()
+            except Exception:
+                pass
+
+    def cleanup(self):
+        """Call this when the application is closing."""
+        self.stop_theme()
+        if self._initialized:
+            try:
+                pygame.mixer.quit()
             except Exception:
                 pass
 
@@ -174,6 +170,8 @@ class SimulatorApp(ctk.CTk):
         self._on_level_change("Level 1: Ring Topology")
         
         self.select_json_theme(self.current_theme_name)
+
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     # ------------------------------------------------------------------
     # Assistant Toggle
@@ -1088,6 +1086,10 @@ class SimulatorApp(ctk.CTk):
             command=dialog.destroy,
         ).pack(pady=(15, 10))
 
+    def on_closing(self):
+        if hasattr(self, "theme_manager_audio"):
+            self.theme_manager_audio.cleanup()
+        self.destroy()
 
 if __name__ == "__main__":
     app = SimulatorApp()
