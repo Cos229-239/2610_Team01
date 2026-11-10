@@ -28,7 +28,7 @@ STATUS_COLORS_STD = {
 }
 
 EDGE_COLORS_STD = {
-    "INFECTED": "#FF5252",
+    "INFECTED": "#FF1744",
     "WARNING": "#FFB74D",
     "HEALTHY": "#8b5a2b",
 }
@@ -146,7 +146,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.sprite_manager = AssetManager()
 
     def apply_custom_theme(self, theme_data: dict):
-        """Applies loaded JSON theme palette dynamically to canvas elements."""
         self.configure(bg=theme_data.get("canvas_bg", "#d8ccb0"))
         if "status_colors" in theme_data:
             self.status_colors = theme_data["status_colors"]
@@ -157,7 +156,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def set_colorblind_mode(self, enabled: bool):
-        """Toggles colorblind-friendly rendering palette on canvas."""
         self.colorblind_mode = bool(enabled)
         if self.colorblind_mode:
             self.status_colors = STATUS_COLORS_CB.copy()
@@ -168,11 +166,9 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def set_node_select_callback(self, callback):
-        """Registers a callback function invoked when a node is selected in SELECT mode."""
         self.node_select_callback = callback
 
     def flash_target_node(self, node_idx: int, pulses: int = 6):
-        """Flashes a target ring animation around the specified node upon attack/exploit."""
         if not self.graph or node_idx < 0 or node_idx >= len(self.graph.nodes):
             return
 
@@ -196,10 +192,6 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         _pulse_step(pulses)
 
-    # ------------------------------------------------------------------
-    # Viewport Coordinate Mapping
-    # ------------------------------------------------------------------
-
     def world_to_screen(self, wx: float, wy: float) -> Tuple[float, float]:
         sx = (wx * self.zoom_factor) + self.pan_offset_x
         sy = (wy * self.zoom_factor) + self.pan_offset_y
@@ -209,10 +201,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         wx = (sx - self.pan_offset_x) / self.zoom_factor
         wy = (sy - self.pan_offset_y) / self.zoom_factor
         return wx, wy
-
-    # ------------------------------------------------------------------
-    # Zoom & Pan Event Handlers
-    # ------------------------------------------------------------------
 
     def _on_zoom(self, event):
         if event.num == 4 or event.delta > 0:
@@ -236,7 +224,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def _start_pan(self, event):
-        """Right-click: show context menu if on a node, otherwise start panning."""
         if not self.graph:
             return
 
@@ -255,7 +242,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def _on_double_click(self, event):
-        """Double-click a node to launch the interactive Cisco IOS CLI terminal."""
         if not self.graph:
             return
 
@@ -273,7 +259,6 @@ class NetworkCanvas(ctk.CTkCanvas):
                 "node_type": getattr(node, "node_type", "Router"),
             }
 
-            # Launch Cisco CLI Popup Modal
             CiscoCLITerminal(
                 parent=self,
                 node_data=node_data,
@@ -281,7 +266,6 @@ class NetworkCanvas(ctk.CTkCanvas):
             )
 
     def _handle_cli_command(self, src_node_id: str, command: str) -> str:
-        """Processes CLI execution logic and triggers animated PDU packets across edges."""
         tokens = command.split()
         if not tokens:
             return ""
@@ -291,7 +275,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         if base_cmd == "ping" and len(tokens) > 1:
             target_ip = tokens[1]
 
-            # 1. Locate Source and Target Node Indices
             src_idx = next(
                 (i for i, n in enumerate(self.graph.nodes) if n.id == src_node_id), None
             )
@@ -311,11 +294,9 @@ class NetworkCanvas(ctk.CTkCanvas):
                     f"Success rate is 0 percent (0/5) — Host Unreachable"
                 )
 
-            # 2. Find Direct Edge Path
             edge_idx = self._find_edge_between(src_idx, dst_idx)
 
             if edge_idx is not None:
-                # 3. Spawn moving PDU frame onto the PDU engine
                 if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
                     self.graph.pdu_engine.spawn_pdu(
                         src_idx=src_idx,
@@ -340,7 +321,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
         if "show ip interface" in command.lower():
-            return "Interface                 IP-Address     OK? Method Status                     Protocol\nFastEthernet0/0           192.168.1.1    YES manual up                       up"
+            return "Interface                     IP-Address      OK? Method Status                  Protocol\nFastEthernet0/0             192.168.1.1     YES manual up                     up"
 
         if "show ip route" in command.lower():
             return "Codes: C - connected, s - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
@@ -348,15 +329,10 @@ class NetworkCanvas(ctk.CTkCanvas):
         return f"% Invalid command or syntax error at '{command}'"
 
     def _find_edge_between(self, u: int, v: int) -> Optional[int]:
-        """Helper method to locate an edge index connecting two node indices."""
         for idx, edge in enumerate(self.graph.edges):
             if (edge.u == u and edge.v == v) or (edge.u == v and edge.v == u):
                 return idx
         return None
-
-    # ------------------------------------------------------------------
-    # Canvas Mode Setup
-    # ------------------------------------------------------------------
 
     def set_mode(self, mode: str):
         self.mode = mode
@@ -410,7 +386,6 @@ class NetworkCanvas(ctk.CTkCanvas):
             self.render()
 
     def _show_node_context_menu(self, event, node_idx: int):
-        """Shows a right-click context menu for the selected node."""
         if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
             return
 
@@ -482,7 +457,6 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.render()
 
     def _edit_node_ip_dialog(self, node_idx: int):
-        """Opens a dialog to manually edit the IP address and subnet of a node."""
         if not self.graph or not (0 <= node_idx < len(self.graph.nodes)):
             return
 
@@ -549,20 +523,14 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_x = world_x
         self.mouse_y = world_y
 
-        # -------------------------------------------------------------
-        # -1. QUARANTINED EDGE OVERRIDE HIT-TEST: Lift quarantine manually
-        # -------------------------------------------------------------
+        # Handle Quarantine Unlock Clicks
         for edge_idx, (bx1, by1, bx2, by2) in self.quarantine_btn_bounds.items():
             if bx1 <= event.x <= bx2 and by1 <= event.y <= by2:
                 edge = self.graph.edges[edge_idx]
                 edge.status = "HEALTHY"
-                print(f"[Defense AI] Manual override: Quarantine lifted on edge {edge_idx}.")
                 self.render()
                 return
 
-        # -------------------------------------------------------------
-        # 0. PACKET HIT-TEST: Check if user clicked an active PDU packet
-        # -------------------------------------------------------------
         if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine and self.graph.pdu_engine.active_pdus:
             for pdu in self.graph.pdu_engine.active_pdus:
                 if 0 <= pdu.src_node_idx < len(self.graph.nodes) and 0 <= pdu.dst_node_idx < len(self.graph.nodes):
@@ -575,7 +543,6 @@ class NetworkCanvas(ctk.CTkCanvas):
                     px = s1_x + (s2_x - s1_x) * pdu.progress
                     py = s1_y + (s2_y - s1_y) * pdu.progress
                     
-                    # Hit test threshold: within 16 pixels of packet envelope on canvas
                     if abs(event.x - px) <= 16 and abs(event.y - py) <= 16:
                         PacketInspectorModal(self.winfo_toplevel(), pdu, self.graph)
                         return
@@ -589,6 +556,8 @@ class NetworkCanvas(ctk.CTkCanvas):
             edge_idx = self.graph.find_edge_near_point(world_x, world_y)
             if edge_idx is not None:
                 edge = self.graph.edges[edge_idx]
+                if edge.status == "BREACHED":
+                    return
                 if edge.is_firewall:
                     self.graph.toggle_firewall_at_index(edge_idx)
                     self.render()
@@ -598,7 +567,6 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         clicked_idx = self._get_node_at_pos(world_x, world_y)
 
-        # Mode Interaction Routing
         if self.mode == "ADD_NODE":
             if clicked_idx is None:
                 self.graph.add_node(world_x, world_y, node_type=self.active_node_type)
@@ -607,14 +575,11 @@ class NetworkCanvas(ctk.CTkCanvas):
         elif self.mode == "CONNECT_EDGE":
             if clicked_idx is not None:
                 if self.selected_node_idx is None:
-                    # Select origin node
                     self.selected_node_idx = clicked_idx
                 elif self.selected_node_idx != clicked_idx:
-                    # Connect origin to destination node
                     self.graph.add_edge(self.selected_node_idx, clicked_idx)
                     self.selected_node_idx = None
                 else:
-                    # Clicking same node deselects
                     self.selected_node_idx = None
             else:
                 self.selected_node_idx = None
@@ -654,37 +619,25 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_x = world_x
         self.mouse_y = world_y
 
-        is_hovering_quarantine_btn = any(
+        is_hovering_interactive_btn = any(
             bx1 <= event.x <= bx2 and by1 <= event.y <= by2
-            for bx1, by1, bx2, by2 in self.quarantine_btn_bounds.values()
+            for bounds_dict in (self.quarantine_btn_bounds, self.firewall_btn_bounds)
+            for bx1, by1, bx2, by2 in bounds_dict.values()
         )
 
-        if is_hovering_quarantine_btn:
+        if is_hovering_interactive_btn:
             self.config(cursor="hand2")
             return
 
         if self.mode == "FIREWALL" and self.graph:
-            is_hovering_btn = any(
-                bx1 <= event.x <= bx2 and by1 <= event.y <= by2
-                for bx1, by1, bx2, by2 in self.firewall_btn_bounds.values()
-            )
             hovered_edge = self.graph.find_edge_near_point(world_x, world_y)
-
-            if is_hovering_btn:
-                self.config(cursor="hand2")
-            else:
-                self.config(
-                    cursor="X_cursor" if hovered_edge is not None else "crosshair"
-                )
+            self.config(
+                cursor="X_cursor" if hovered_edge is not None else "crosshair"
+            )
         elif self.mode == "CONNECT_EDGE" and self.selected_node_idx is not None:
             self.render()
 
-    # ------------------------------------------------------------------
-    # Render Loop & Active PDU Animation
-    # ------------------------------------------------------------------
-
     def render_active_pdus(self, pdus: List):
-        """Renders animated Cisco Packet Tracer PDU envelopes traveling along edges."""
         if not self.graph or not pdus:
             return
 
@@ -736,7 +689,7 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         zf = self.zoom_factor
 
-        # 1. Render Edges, Firewalls, and Quarantined Links
+        # 1. Render Edges, Firewalls, Quarantines, and Normal Lines
         for index, edge in enumerate(self.graph.edges):
             if 0 <= edge.u < len(self.graph.nodes) and 0 <= edge.v < len(
                 self.graph.nodes
@@ -745,20 +698,19 @@ class NetworkCanvas(ctk.CTkCanvas):
                 s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
                 s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
 
-                # Normalize status string for robust case-insensitive matching
                 edge_status = str(getattr(edge, "status", "")).upper()
-                print(f"[Render Debug] Edge {index} ({edge.u} <-> {edge.v}) status: '{edge_status}'")
+                is_firewall = bool(getattr(edge, "is_firewall", False))
+                crack_progress = float(getattr(edge, "crack_progress", 0.0))
 
-                # Check if edge is automatically quarantined by the Defense AI
+                # A. Quarantined Edge
                 if edge_status in ("QUARANTINED", "QUARANTINE", "ISOLATED", "BLOCKED"):
                     self.create_line(
                         s1_x, s1_y, s2_x, s2_y,
-                        fill="#FF9800",  # Amber/Orange warning color
+                        fill="#FF9800",
                         width=max(2, int(3 * zf)),
-                        dash=(4, 4)      # Dashed line pattern
+                        dash=(4, 4)
                     )
                     
-                    # Midpoint UNLOCK override button badge (expanded bounds)
                     mid_sx, mid_sy = (s1_x + s2_x) / 2, (s1_y + s2_y) / 2
                     bx1, by1 = mid_sx - int(45 * zf), mid_sy - int(16 * zf)
                     bx2, by2 = mid_sx + int(45 * zf), mid_sy + int(16 * zf)
@@ -768,28 +720,22 @@ class NetworkCanvas(ctk.CTkCanvas):
                     self.create_rectangle(bx1, by1, bx2, by2, fill="#E65100", outline="#FFFFFF", width=1)
                     self.create_text(mid_sx, mid_sy, text="UNLOCK", fill="#FFFFFF", font=("Consolas", max(6, int(7 * zf)), "bold"))
 
-                elif getattr(edge, "is_firewall", False):
+                # B. Active Firewall or Cracking Progress
+                elif is_firewall or crack_progress > 0.0:
                     self.create_line(
-                        s1_x,
-                        s1_y,
-                        s2_x,
-                        s2_y,
+                        s1_x, s1_y, s2_x, s2_y,
                         fill="#00E5FF",
                         width=max(2, int(6 * zf)),
                     )
 
-                    progress = getattr(edge, "crack_progress", 0.0)
                     beam_color = (
                         "#FF1744"
-                        if progress > 0.7
-                        else ("#FF9100" if progress > 0.3 else "#FFFFFF")
+                        if crack_progress > 0.7
+                        else ("#FF9100" if crack_progress > 0.3 else "#00E5FF")
                     )
 
                     self.create_line(
-                        s1_x,
-                        s1_y,
-                        s2_x,
-                        s2_y,
+                        s1_x, s1_y, s2_x, s2_y,
                         fill=beam_color,
                         width=max(1, int(2 * zf)),
                     )
@@ -803,42 +749,61 @@ class NetworkCanvas(ctk.CTkCanvas):
                     eta_ticks = int(remaining / 250) if remaining > 0 else 0
                     eta_text = f"ETA {eta_ticks}s" if eta_ticks > 0 else "BREACH"
 
-                    badge_w = int(40 * min(1.5, max(0.7, zf)))
-                    badge_h = int(18 * min(1.5, max(0.7, zf)))
+                    badge_w = int(45 * min(1.5, max(0.7, zf)))
+                    badge_h = int(22 * min(1.5, max(0.7, zf)))
 
+                    # Info Badge Box
                     self.create_rectangle(
                         mid_sx - badge_w,
-                        mid_sy - badge_h,
-                        mid_sx + (badge_w // 3),
-                        mid_sy + badge_h,
+                        mid_sy - badge_h - 10,
+                        mid_sx + (badge_w // 2),
+                        mid_sy + badge_h - 10,
                         fill="#002b36",
                         outline=beam_color,
                         width=2,
                     )
 
-                    label_text = f"🔑{pwd}\n{int(progress * 100)}%\n[{attempts:,} Tries]\n{eta_text}"
+                    label_text = f"🔑{pwd}\n[{attempts:,} Tries]\n{eta_text}"
                     self.create_text(
-                        mid_sx - (badge_w // 3),
-                        mid_sy,
+                        mid_sx - (badge_w // 4),
+                        mid_sy - 10,
                         text=label_text,
                         fill="#00E5FF",
-                        font=("Consolas", max(5, int(6 * zf)), "bold"),
+                        font=("Consolas", max(5, int(5.5 * zf)), "bold"),
                         justify="center",
                     )
 
-                    btn_x1, btn_y1 = mid_sx + (badge_w // 3) + 2, mid_sy - badge_h
-                    btn_x2, btn_y2 = mid_sx + badge_w + 4, mid_sy + badge_h
+                    # Dynamic Progress Bar Filling
+                    bar_w = int(70 * zf)
+                    bar_h = int(8 * zf)
+                    bx1 = mid_sx - (bar_w // 2)
+                    by1 = mid_sy + badge_h - 4
+                    bx2 = bx1 + bar_w
+                    by2 = by1 + bar_h
+
+                    self.create_rectangle(bx1, by1, bx2, by2, fill="#111111", outline="#444444", width=1)
+                    
+                    fill_w = int(bar_w * max(0.0, min(1.0, crack_progress)))
+                    if fill_w > 0:
+                        self.create_rectangle(bx1, by1, bx1 + fill_w, by2, fill=beam_color, outline="", width=0)
+
+                    self.create_text(
+                        mid_sx,
+                        by1 + (bar_h // 2),
+                        text=f"{int(crack_progress * 100)}%",
+                        fill="#FFFFFF",
+                        font=("Consolas", max(5, int(6 * zf)), "bold"),
+                    )
+
+                    # Settings Button
+                    btn_x1, btn_y1 = mid_sx + (badge_w // 2) + 4, mid_sy - badge_h - 10
+                    btn_x2, btn_y2 = mid_sx + badge_w + 14, mid_sy + badge_h - 10
 
                     self.firewall_btn_bounds[index] = (btn_x1, btn_y1, btn_x2, btn_y2)
 
                     self.create_rectangle(
-                        btn_x1,
-                        btn_y1,
-                        btn_x2,
-                        btn_y2,
-                        fill="#00B0FF",
-                        outline="#FFFFFF",
-                        width=1,
+                        btn_x1, btn_y1, btn_x2, btn_y2,
+                        fill="#00B0FF", outline="#FFFFFF", width=1,
                     )
                     self.create_text(
                         (btn_x1 + btn_x2) / 2,
@@ -847,10 +812,12 @@ class NetworkCanvas(ctk.CTkCanvas):
                         fill="#FFFFFF",
                         font=("Arial", max(7, int(9 * zf))),
                     )
+
+                # C. Normal, Infected, or Breached Edges (Clean Solid Lines with NO Buttons)
                 else:
-                    edge_color = self.edge_colors.get(edge.status, "#444444")
+                    edge_color = self.edge_colors.get(edge_status, self.edge_colors.get(edge.status, "#444444"))
                     edge_width = max(
-                        1, int((2 if edge.status != "HEALTHY" else 1) * zf)
+                        1, int((3 if edge_status in ("INFECTED", "COMPROMISED", "BREACHED") else (2 if edge_status == "WARNING" else 1)) * zf)
                     )
                     self.create_line(
                         s1_x, s1_y, s2_x, s2_y, fill=edge_color, width=edge_width
@@ -868,10 +835,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 cur_sx, cur_sy = self.world_to_screen(self.mouse_x, self.mouse_y)
 
                 self.create_line(
-                    src_sx,
-                    src_sy,
-                    cur_sx,
-                    cur_sy,
+                    src_sx, src_sy, cur_sx, cur_sy,
                     fill="#FFD54F",
                     width=max(1, int(2 * zf)),
                     dash=(4, 4),
@@ -996,7 +960,6 @@ class NetworkCanvas(ctk.CTkCanvas):
                     font=("Consolas", ip_font_sz),
                 )
 
-            # 5. Render Infection Step Badge if Infected
             step_val = getattr(node, "infection_step", -1)
             if node.status == "INFECTED" and step_val >= 0:
                 badge_radius = max(7, int(10 * zf))
@@ -1035,11 +998,9 @@ class CanvasView(ctk.CTkFrame):
 
     @property
     def selected_node_idx(self) -> Optional[int]:
-        """Provides direct access to selected node index on inner canvas."""
         return self.canvas.selected_node_idx
 
     def flash_target_node(self, node_idx: int):
-        """Delegates node flash animation trigger to inner canvas."""
         self.canvas.flash_target_node(node_idx)
 
     def trigger_export(self):
@@ -1088,7 +1049,6 @@ class CanvasView(ctk.CTkFrame):
         except Exception as e:
             print(f"Export failed: {e}")
 
-    # Delegated methods required by app.py:
     def render(self):
         self.canvas.render()
 
@@ -1105,5 +1065,4 @@ class CanvasView(ctk.CTkFrame):
         self.canvas.set_node_select_callback(callback)
 
     def set_colorblind_mode(self, enabled: bool):
-        """Delegates colorblind mode setting to inner canvas."""
         self.canvas.set_colorblind_mode(enabled)

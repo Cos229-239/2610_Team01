@@ -2,7 +2,7 @@ import math
 import random
 import string
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from .node_types import NODE_TYPES
 from .pdu_engine import PDUSimulationEngine
 
@@ -10,18 +10,16 @@ from .pdu_engine import PDUSimulationEngine
 def calculate_password_search_space(password: str) -> int:
     """Calculates exact total combination pool (N^L) based on length and character set diversity."""
     if not password or not password.strip():
-        return 50  # Instant threshold for empty/blank keys
+        return 50
 
     pwd = password.strip()
     length = len(pwd)
 
-    # Detect character set presence
     has_digit = any(c in string.digits for c in pwd)
     has_lower = any(c in string.ascii_lowercase for c in pwd)
     has_upper = any(c in string.ascii_uppercase for c in pwd)
     has_symbol = any(c in string.punctuation for c in pwd)
 
-    # Build exact character set size (N)
     charset_size = 0
     if has_digit:
         charset_size += 10
@@ -32,10 +30,7 @@ def calculate_password_search_space(password: str) -> int:
     if has_symbol:
         charset_size += 32
 
-    # If password consists of characters outside predefined sets, fallback to minimum
-    charset_size = max(charset_size, 10)  # Pure numeric minimum
-
-    # Combination space = N^L
+    charset_size = max(charset_size, 10)
     return charset_size**length
 
 
@@ -48,9 +43,9 @@ class Node:
     y: float = 0.0
     is_patient_zero: bool = False
     infection_step: int = -1
-    ip_address: str = ""  # e.g. "192.168.10.5"
-    subnet: str = "192.168.1.0/24"  # the network this node belongs to
-    mac_address: str = ""  # Hardware MAC Address
+    ip_address: str = ""
+    subnet: str = "192.168.1.0/24"
+    mac_address: str = ""
 
     def __post_init__(self):
         if not self.mac_address:
@@ -63,11 +58,12 @@ class Edge:
     u: int
     v: int
     status: str = "HEALTHY"
-    is_firewall: bool = False
-    password: str = ""  # Encryption key
-    crack_progress: float = 0.0  # Cracking percentage (0.0 to 1.0)
-    crack_attempts: int = 0  # Total brute-force tries attempted
-    required_attempts: int = 0  # Total combinations required to breach
+    is_firewall: bool = False  # MUST be False so edges start clean
+    password: str = ""
+    crack_progress: float = 0.0
+    crack_attempts: int = 0
+    required_attempts: int = 0
+    breached_from_lock: bool = False
 
 
 @dataclass
@@ -75,9 +71,8 @@ class NetworkGraph:
     nodes: List[Node] = field(default_factory=list)
     edges: List[Edge] = field(default_factory=list)
 
-    # Base network for this graph (third octet changes per topology)
     base_network: str = "192.168.1.0/24"
-    _next_subnet: int = 1  # next host number to hand out
+    _next_subnet: int = 1
     pdu_engine: Optional[PDUSimulationEngine] = None
 
     def __post_init__(self):
@@ -88,14 +83,7 @@ class NetworkGraph:
     def node_count(self) -> int:
         return len(self.nodes)
 
-    def _generate_unique_subnet_and_ip(self) -> tuple[str, str]:
-        """Returns (ip_address, subnet) where every node gets a distinct / 24.
-        Example sequence:
-            192.168.1.10  ->  192.168.1.0/24
-            192.168.2.10  ->  192.168.2.0/24
-            192.168.3.10  ->  192.168.3.0/24
-            ...
-        """
+    def _generate_unique_subnet_and_ip(self) -> Tuple[str, str]:
         try:
             start_octet = int(self.base_network.split(".")[2])
         except (IndexError, ValueError):
@@ -108,7 +96,7 @@ class NetworkGraph:
             third = ((third - 1) % 254) + 1
 
         subnet = f"192.168.{third}.0/24"
-        ip = f"192.168.{third}.10"  # .10 is a safe host address
+        ip = f"192.168.{third}.10"
 
         return ip, subnet
 
@@ -120,7 +108,6 @@ class NetworkGraph:
         ip_address: Optional[str] = None,
         subnet: Optional[str] = None,
     ) -> Node:
-        """Adds a new node with a specific device type at canvas coordinates."""
         node_id = f"{node_type[:2].upper()}-{len(self.nodes) + 1:02d}"
         is_first = len(self.nodes) == 0
 
@@ -150,10 +137,6 @@ class NetworkGraph:
         ip_address: str,
         subnet: str,
     ) -> bool:
-        """Manually set (or change) the IP address and subnet of an existing node.
-
-        Returns True on success, False if the index is invalid.
-        """
         if not (0 <= node_index < len(self.nodes)):
             return False
 
@@ -163,7 +146,7 @@ class NetworkGraph:
         return True
 
     def add_edge(self, u_index: int, v_index: int):
-        """Adds an undirected edge between two node indices if valid."""
+        """Adds a clean, unencrypted edge between two node indices."""
         if u_index == v_index or not (
             0 <= u_index < len(self.nodes) and 0 <= v_index < len(self.nodes)
         ):
@@ -175,15 +158,22 @@ class NetworkGraph:
             ):
                 return
 
-        self.edges.append(Edge(u=u_index, v=v_index))
+        self.edges.append(
+            Edge(
+                u=u_index,
+                v=v_index,
+                status="HEALTHY",
+                is_firewall=False,
+                password="",
+                required_attempts=0,
+            )
+        )
 
     def set_patient_zero(self, node_index: int):
-        """Sets a single node as Patient Zero and clears other nodes."""
         for i, node in enumerate(self.nodes):
             node.is_patient_zero = i == node_index
 
     def get_patient_zero_index(self) -> int:
-        """Returns index of Patient Zero, default to 0."""
         for i, node in enumerate(self.nodes):
             if node.is_patient_zero:
                 return i
@@ -192,9 +182,6 @@ class NetworkGraph:
     def find_edge_near_point(
         self, px: float, py: float, tolerance: float = 10.0
     ) -> Optional[int]:
-        """Calculates distance from point (px, py) to all edges and returns
-        the index of the edge closest to the point within a tolerance radius.
-        """
         for index, edge in enumerate(self.edges):
             if edge.u < len(self.nodes) and edge.v < len(self.nodes):
                 n1, n2 = self.nodes[edge.u], self.nodes[edge.v]
@@ -221,11 +208,11 @@ class NetworkGraph:
         return None
 
     def toggle_firewall_at_index(self, index: int, custom_pwd: str = "") -> bool:
-        """Toggles an active firewall barrier, sets a custom or random password key,
-        and computes the total search space complexity.
-        """
         if 0 <= index < len(self.edges):
             edge = self.edges[index]
+            if edge.status == "BREACHED":
+                return False
+
             edge.is_firewall = not edge.is_firewall
             edge.crack_progress = 0.0
             edge.crack_attempts = 0
@@ -237,16 +224,29 @@ class NetworkGraph:
                     edge.password = "".join(random.choices("0123456789", k=3))
 
                 edge.required_attempts = calculate_password_search_space(edge.password)
+                edge.status = "HEALTHY"
             else:
                 edge.password = ""
                 edge.required_attempts = 0
+                edge.status = "HEALTHY"
+                edge.breached_from_lock = False
+            return True
+        return False
+
+    def recover_edge(self, index: int) -> bool:
+        if 0 <= index < len(self.edges):
+            edge = self.edges[index]
+            edge.status = "HEALTHY"
+            edge.is_firewall = False
+            edge.password = ""
+            edge.crack_progress = 0.0
+            edge.crack_attempts = 0
+            edge.required_attempts = 0
+            edge.breached_from_lock = False
             return True
         return False
 
     def reset_states(self):
-        """Resets node statuses, restores Patient Zero, and clears infection/crack progress 
-        while preserving active defensive quarantines unless explicitly reset.
-        """
         p0_idx = self.get_patient_zero_index() if self.nodes else 0
 
         for i, node in enumerate(self.nodes):
@@ -255,22 +255,21 @@ class NetworkGraph:
             node.infection_step = -1
 
         for edge in self.edges:
-            # Preserve QUARANTINED status unless reset is full, but clear infection/cracking
-            if edge.status != "QUARANTINED":
-                edge.status = "HEALTHY"
+            edge.status = "HEALTHY"
+            edge.is_firewall = False
+            edge.password = ""
             edge.crack_progress = 0.0
             edge.crack_attempts = 0
+            edge.required_attempts = 0
+            edge.breached_from_lock = False
 
     def clear(self):
-        """Clears all nodes and edges from the graph instance."""
         self.nodes.clear()
         self.edges.clear()
         self._next_subnet = 1
 
 
 class TopologyGenerator:
-    """Strategy class for generating preset network topologies."""
-
     @staticmethod
     def generate_ring(num_nodes: int = 20) -> NetworkGraph:
         graph = NetworkGraph(base_network="192.168.10.0/24")
@@ -327,7 +326,6 @@ class TopologyGenerator:
 
     @staticmethod
     def apply_ring_layout(graph: NetworkGraph, width: float, height: float):
-        """Calculates circular canvas positions for all nodes in the graph."""
         num_nodes = len(graph.nodes)
         if num_nodes == 0:
             return

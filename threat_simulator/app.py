@@ -6,7 +6,6 @@ import pygame
 from tkinter import Menu
 from typing import Dict, List, Optional, Tuple
 
-
 # Add project root directory to sys.path to resolve internal modules
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
@@ -67,7 +66,6 @@ class SimulationThemeManager:
         except Exception as e:
             print(f"[Theme Error] Failed to initialize pygame mixer: {e}")
             self.enabled = False
-
 
     def set_volume(self, volume: float):
         """Set volume from 0.0 to 1.0 (real volume control)."""
@@ -956,23 +954,28 @@ class SimulatorApp(ctk.CTk):
             return
 
         self.pause_sim()
-        self.sim_engine.reset()
+        
+        # 1. Reset simulation engine state
+        self.sim_engine.reset(self.graph)
+        
+        # 2. Clear telemetry logs and PDU packet animations
         self.telemetry_panel.clear()
-        self.graph.reset_states()
-
         if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
             self.graph.pdu_engine.active_pdus.clear()
 
+        # 3. Reset all nodes and edges back to initial healthy states
         p0_idx = self.graph.get_patient_zero_index() if self.graph.nodes else 0
-
         for i, node in enumerate(self.graph.nodes):
             node.status = "HEALTHY"
             node.is_patient_zero = (i == p0_idx)
+            if hasattr(node, "defense_boost"):
+                node.defense_boost = 0.0
 
-        # Preserve QUARANTINED status on edges unless explicitly reset
         for edge in self.graph.edges:
-            if getattr(edge, "status", "") != "QUARANTINED":
-                edge.status = "HEALTHY"
+            edge.status = "HEALTHY"
+            edge.crack_progress = 0.0
+            edge.crack_attempts = 0
+            edge.breached_from_lock = False
 
         self.net_canvas.render()
 

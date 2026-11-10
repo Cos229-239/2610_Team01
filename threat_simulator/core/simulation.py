@@ -54,6 +54,20 @@ class SimSnapshot:
     edges: List
 
 
+class ThreatEscalationEngine:
+    @staticmethod
+    def calculate_escalation_multiplier(step_counter: int, infected_count: int, total_nodes: int) -> float:
+        """Computes a dynamic escalation factor based on simulation time and capture ratio."""
+        if total_nodes <= 0:
+            return 1.0
+
+        capture_ratio = infected_count / float(total_nodes)
+        time_factor = 1.0 + (step_counter * 0.05)
+        footprint_factor = 1.0 + (15.0 * (max(0.0, capture_ratio - 0.15) ** 1.8))
+        raw_multiplier = time_factor * footprint_factor
+        return min(25.0, max(1.0, raw_multiplier))
+
+
 class DefenseAI:
     """Intelligent Defense AI counterpart to counter the threat propagation model."""
     
@@ -73,24 +87,20 @@ class DefenseAI:
         for node_idx in at_risk_nodes:
             node = graph.nodes[node_idx]
             if getattr(node, "node_type", "PC") in hub_types and defense_power > 0.3:
-                # Apply a temporary defensive shield bonus
                 node.defense_boost = getattr(node, 'defense_boost', 0.0) + (defense_power * 0.25)
                 mitigation_events.append(f"🛡️ Defense AI Hardened critical hub [{getattr(node, 'id', node_idx)}] against lateral movement.")
 
         # 3. Automated Quarantine / Edge Severing
-        # If defense power is robust (>= 0.6), sever connections bridging infected and healthy nodes
         if defense_power >= 0.6:
             edges_to_quarantine = []
             for edge in graph.edges:
                 u_inf = graph.nodes[edge.u].status == "INFECTED" or graph.nodes[edge.u].is_patient_zero
                 v_inf = graph.nodes[edge.v].status == "INFECTED" or graph.nodes[edge.v].is_patient_zero
                 
-                # If one endpoint is infected and the other is clean, quarantine the link
                 if (u_inf and not v_inf) or (v_inf and not u_inf):
-                    if getattr(edge, "status", "") != "QUARANTINED" and not getattr(edge, "is_firewall", False):
+                    if getattr(edge, "status", "") != "QUARANTINED" and not getattr(edge, "is_firewall", False) and getattr(edge, "status", "") != "BREACHED":
                         edges_to_quarantine.append(edge)
 
-            # Limit quarantines per turn to simulate gradual automated response bandwidth
             quarantine_limit = max(1, int(len(edges_to_quarantine) * 0.4))
             for edge in edges_to_quarantine[:quarantine_limit]:
                 edge.status = "QUARANTINED"
@@ -111,11 +121,29 @@ class SimulationEngine:
         self.msf_module = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=45)
         self.gerald_module = GeraldTheSlightFrayer()
 
-    def reset(self) -> None:
+    def reset(self, graph: Optional[NetworkGraph] = None) -> None:
         self.step_counter = 0
         self.total_recovered_count = 0
         self.history.clear()
         self.history_index = -1
+
+        if graph:
+            # 1. Reset all nodes to healthy and remove patient zero / boosts
+            for node in graph.nodes:
+                node.status = "HEALTHY"
+                node.is_patient_zero = False
+                if hasattr(node, "defense_boost"):
+                    node.defense_boost = 0.0
+
+            # 2. Reset all edges (clear quarantine, breaches, crack progress, and lock flags)
+            for edge in graph.edges:
+                edge.status = "HEALTHY"
+                edge.is_firewall = False
+                edge.password = ""
+                edge.required_attempts = 0
+                edge.crack_progress = 0.0
+                edge.crack_attempts = 0
+                edge.breached_from_lock = False
 
     def _record_snapshot(self, graph: NetworkGraph, telemetry: TelemetryData):
         snap = SimSnapshot(
@@ -190,7 +218,7 @@ class SimulationEngine:
         firewalls_found = False
 
         for edge in graph.edges:
-            if getattr(edge, "is_firewall", False):
+            if edge.is_firewall and getattr(edge, "status", "") != "BREACHED":
                 firewalls_found = True
                 req_attempts = getattr(edge, "required_attempts", 0)
                 if req_attempts <= 0:
@@ -200,19 +228,16 @@ class SimulationEngine:
                 edge.crack_attempts = getattr(edge, "crack_attempts", 0) + 35000
                 edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
                 
-                target_name = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
-                events.append(f"Gerald: Manual hash crack burst on Node {target_name} ({int(edge.crack_progress * 100)}%)")
+                events.append(f"Gerald: Manual hash crack burst on Edge ({int(edge.crack_progress * 100)}%)")
 
                 if edge.crack_progress >= 1.0:
                     edge.is_firewall = False
-                    edge.crack_progress = 0.0
-                    edge.crack_attempts = 0
-                    edge.password = ""
-                    edge.status = "INFECTED"
-                    events.append(f"Gerald: Firewall breached and password cracked on Node {target_name}!")
+                    edge.status = "BREACHED"
+                    edge.breached_from_lock = True
+                    events.append(f"Gerald: Edge completely breached and password cracked!")
 
         if not firewalls_found:
-            events.append("Gerald: No active firewalls remaining in topology.")
+            events.append("Gerald: No active firewall-locked edges remaining in topology.")
             
         return events
 
@@ -254,7 +279,7 @@ class SimulationEngine:
         def_power: float,
         ai_mode: str = "Strategic AI",
     ) -> TelemetryData:
-        """Executes a single simulation tick with automated Defense AI and threat escalation."""
+        """Executes a single simulation tick with automated Defense AI and balanced threat escalation."""
         self.step_counter += 1
         total_nodes = graph.node_count
         step_events: List[str] = []
@@ -271,12 +296,8 @@ class SimulationEngine:
             self._record_snapshot(graph, telemetry)
             return telemetry
 
-        # -------------------------------------------------------------
-        # CAPTURE-BASED 100X THREAT ESCALATION
-        # -------------------------------------------------------------
         currently_infected = {
-            i
-            for i, node in enumerate(graph.nodes)
+            i for i, node in enumerate(graph.nodes)
             if node.status == "INFECTED" or node.is_patient_zero
         }
         if not currently_infected and graph.nodes:
@@ -284,12 +305,31 @@ class SimulationEngine:
             graph.nodes[p0_idx].status = "INFECTED"
             currently_infected.add(p0_idx)
 
-        infected_cnt = len(currently_infected)
-        capture_ratio = infected_cnt / float(max(1, total_nodes))
+        # Progress active edge cracking attempts automatically per tick (ONLY IF is_firewall is True)
+        for edge in graph.edges:
+            if getattr(edge, "is_firewall", False) and getattr(edge, "status", "") != "BREACHED":
+                req_attempts = getattr(edge, "required_attempts", 10000)
+                if req_attempts <= 0:
+                    req_attempts = calculate_password_search_space(edge.password)
+                    edge.required_attempts = req_attempts
 
-        time_escalation = 1.0 + min(0.5, self.step_counter * 0.02)
-        capture_escalation = 1.0 + (99.0 * (capture_ratio ** 1.5))
-        escalation_factor = min(100.0, time_escalation * capture_escalation)
+                edge.crack_attempts = getattr(edge, "crack_attempts", 0) + int(1200 * (1.0 + inf_rate))
+                edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
+
+                if edge.crack_progress >= 1.0:
+                    edge.is_firewall = False
+                    edge.status = "BREACHED"
+                    edge.breached_from_lock = True
+                    u_id = getattr(graph.nodes[edge.u], 'id', f"Node-{edge.u}")
+                    v_id = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
+                    step_events.append(f"⚡ Threat AI: Edge link between {u_id} and {v_id} successfully breached!")
+
+        # -------------------------------------------------------------
+        # DYNAMIC THREAT ESCALATION MULTIPLIER
+        # -------------------------------------------------------------
+        escalation_factor = ThreatEscalationEngine.calculate_escalation_multiplier(
+            self.step_counter, len(currently_infected), total_nodes
+        )
         effective_inf_rate = min(1.0, inf_rate * (escalation_factor ** 0.35))
 
         defense_fatigue = max(0.2, 1.0 - (self.step_counter * 0.015))
@@ -298,8 +338,15 @@ class SimulationEngine:
         # 1. Build Adjacency Map (Excludes Intact Active Firewalls & Quarantined Edges)
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         for edge in graph.edges:
-            if getattr(edge, "is_firewall", False) or getattr(edge, "status", "") == "QUARANTINED":
+            is_active_lock = getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) < 1.0
+            is_quarantined = getattr(edge, "status", "") == "QUARANTINED"
+            is_breached = getattr(edge, "status", "") == "BREACHED"
+            
+            if is_active_lock and not is_breached:
                 continue
+            if is_quarantined:
+                continue
+
             if edge.u < total_nodes and edge.v < total_nodes:
                 adj[edge.u].append(edge.v)
                 adj[edge.v].append(edge.u)
@@ -311,7 +358,7 @@ class SimulationEngine:
         step_events.extend(defense_events)
 
         # -------------------------------------------------------------
-        # PHASE A: INFECTION SPREAD
+        # PHASE A: BALANCED STRATEGIC ATTACK AI SPREAD & QUARANTINE BYPASS
         # -------------------------------------------------------------
         attack_candidates: Dict[int, int] = {}
         for inf_idx in currently_infected:
@@ -323,6 +370,15 @@ class SimulationEngine:
                     attack_candidates[neighbor_idx] = (
                         attack_candidates.get(neighbor_idx, 0) + 1
                     )
+
+        for edge in graph.edges:
+            if getattr(edge, "status", "") in ("QUARANTINED", "BREACHED"):
+                u_inf = graph.nodes[edge.u].status == "INFECTED" or graph.nodes[edge.u].is_patient_zero
+                v_inf = graph.nodes[edge.v].status == "INFECTED" or graph.nodes[edge.v].is_patient_zero
+                if u_inf and not v_inf:
+                    attack_candidates[edge.v] = attack_candidates.get(edge.v, 0) + 2
+                elif v_inf and not u_inf:
+                    attack_candidates[edge.u] = attack_candidates.get(edge.u, 0) + 2
 
         newly_infected = set()
         if attack_candidates:
@@ -337,53 +393,33 @@ class SimulationEngine:
                     for t_idx in attack_candidates
                 ]
                 ranked_targets.sort(key=lambda x: x[1], reverse=True)
-                max_breaches = max(1, int(effective_inf_rate * (4 + int(escalation_factor * 0.1))))
-                best_target_idx, _ = ranked_targets[0]
-                best_node = graph.nodes[best_target_idx]
-                device_type = getattr(best_node, "node_type", "PC")
-                type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
-                type_mult = (type_cfg.defense_multiplier if type_cfg else 1.0) + getattr(best_node, 'defense_boost', 0.0)
-                attack_pressure = effective_inf_rate * (
-                    1.0 + 0.5 * attack_candidates[best_target_idx]
-                )
-                block_chance = max(
-                    0.05,
-                    min(
-                        0.85,
-                        (effective_def_power * 0.6 * type_mult)
-                        - (attack_pressure * 0.2),
-                    ),
-                )
-                if (
-                    random.random() < attack_pressure
-                    and random.random() >= block_chance
-                ):
-                    newly_infected.add(best_target_idx)
-                    step_events.append(f"Strategic AI: Successfully breached high-priority target Node {getattr(best_node, 'id', best_target_idx)}")
-                for target_idx, _ in ranked_targets[1:]:
+                
+                max_breaches = max(1, int(effective_inf_rate * (6 + int(escalation_factor * 0.15))))
+                
+                for target_idx, priority_score in ranked_targets:
                     if len(newly_infected) >= max_breaches:
                         break
+                        
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = (t_cfg.defense_multiplier if t_cfg else 1.0) + getattr(t_node, 'defense_boost', 0.0)
-                    t_block = min(0.90, effective_def_power * 0.7 * t_mult)
-                    if (
-                        random.random() < effective_inf_rate
-                        and random.random() >= t_block
-                    ):
+                    
+                    vector_count = attack_candidates[target_idx]
+                    attack_pressure = effective_inf_rate * (1.0 + (0.4 * vector_count)) * (escalation_factor ** 0.2)
+                    block_chance = max(0.05, min(0.75, (effective_def_power * 0.55 * t_mult) - (attack_pressure * 0.25)))
+
+                    if random.random() < attack_pressure and random.random() >= block_chance:
                         newly_infected.add(target_idx)
+                        step_events.append(f"⚡ Strategic AI: Overcame defense hardening to breach target Node {getattr(t_node, 'id', target_idx)}")
             else:
                 for target_idx in attack_candidates:
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
                     t_mult = (t_cfg.defense_multiplier if t_cfg else 1.0) + getattr(t_node, 'defense_boost', 0.0)
-                    block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
-                    if (
-                        random.random() < effective_inf_rate
-                        and random.random() >= block_chance
-                    ):
+                    block_chance = min(0.80, effective_def_power * 0.65 * t_mult)
+                    if random.random() < effective_inf_rate and random.random() >= block_chance:
                         newly_infected.add(target_idx)
 
         # -------------------------------------------------------------
@@ -414,7 +450,6 @@ class SimulationEngine:
                     recovered_this_step.add(inf_idx)
                     step_events.append(f"Defense AI: Node {getattr(node, 'id', inf_idx)} successfully sanitized and recovered.")
 
-        # Apply state updates
         for idx in newly_infected:
             graph.nodes[idx].status = "INFECTED"
         for idx in recovered_this_step:
@@ -440,11 +475,11 @@ class SimulationEngine:
                     node.status = "HEALTHY"
 
         for edge in graph.edges:
-            if getattr(edge, "status", "") == "QUARANTINED":
+            current_status = getattr(edge, "status", "")
+            if current_status in ("QUARANTINED", "BREACHED"):
                 continue
-            if getattr(edge, "is_firewall", False) and getattr(
-                edge, "crack_progress", 0.0
-            ) > 0.0:
+
+            if getattr(edge, "is_firewall", False) and getattr(edge, "crack_progress", 0.0) > 0.0:
                 edge.status = "WARNING"
             else:
                 u_inf = graph.nodes[edge.u].status == "INFECTED"
@@ -461,7 +496,7 @@ class SimulationEngine:
 
         if infected_cnt == 0:
             status_text = "THREAT NEUTRALIZED - ALL CLEAN"
-        elif escalation_factor > 25.0:
+        elif escalation_factor > 15.0:
             status_text = "OVERWHELMING BOTNET ESCALATION"
         elif threat_pct > 75.0:
             status_text = "CRITICAL OUTBREAK"
