@@ -126,6 +126,7 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_y: float = 0.0
 
         self.firewall_btn_bounds: Dict[int, Tuple[float, float, float, float]] = {}
+        self.quarantine_btn_bounds: Dict[int, Tuple[float, float, float, float]] = {}
 
         # Primary Interaction Binds
         self.bind("<Button-1>", self._on_click)
@@ -339,7 +340,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
         if "show ip interface" in command.lower():
-            return "Interface                 IP-Address      OK? Method Status                  Protocol\nFastEthernet0/0           192.168.1.1     YES manual up                     up"
+            return "Interface                 IP-Address     OK? Method Status                     Protocol\nFastEthernet0/0           192.168.1.1    YES manual up                       up"
 
         if "show ip route" in command.lower():
             return "Codes: C - connected, s - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
@@ -549,6 +550,17 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_y = world_y
 
         # -------------------------------------------------------------
+        # -1. QUARANTINED EDGE OVERRIDE HIT-TEST: Lift quarantine manually
+        # -------------------------------------------------------------
+        for edge_idx, (bx1, by1, bx2, by2) in self.quarantine_btn_bounds.items():
+            if bx1 <= event.x <= bx2 and by1 <= event.y <= by2:
+                edge = self.graph.edges[edge_idx]
+                edge.status = "HEALTHY"
+                print(f"[Defense AI] Manual override: Quarantine lifted on edge {edge_idx}.")
+                self.render()
+                return
+
+        # -------------------------------------------------------------
         # 0. PACKET HIT-TEST: Check if user clicked an active PDU packet
         # -------------------------------------------------------------
         if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine and self.graph.pdu_engine.active_pdus:
@@ -642,6 +654,15 @@ class NetworkCanvas(ctk.CTkCanvas):
         self.mouse_x = world_x
         self.mouse_y = world_y
 
+        is_hovering_quarantine_btn = any(
+            bx1 <= event.x <= bx2 and by1 <= event.y <= by2
+            for bx1, by1, bx2, by2 in self.quarantine_btn_bounds.values()
+        )
+
+        if is_hovering_quarantine_btn:
+            self.config(cursor="hand2")
+            return
+
         if self.mode == "FIREWALL" and self.graph:
             is_hovering_btn = any(
                 bx1 <= event.x <= bx2 and by1 <= event.y <= by2
@@ -708,13 +729,14 @@ class NetworkCanvas(ctk.CTkCanvas):
     def render(self):
         self.delete("all")
         self.firewall_btn_bounds.clear()
+        self.quarantine_btn_bounds.clear()
 
         if not self.graph:
             return
 
         zf = self.zoom_factor
 
-        # 1. Render Edges & Firewall Security Barriers
+        # 1. Render Edges, Firewalls, and Quarantined Links
         for index, edge in enumerate(self.graph.edges):
             if 0 <= edge.u < len(self.graph.nodes) and 0 <= edge.v < len(
                 self.graph.nodes
@@ -723,7 +745,30 @@ class NetworkCanvas(ctk.CTkCanvas):
                 s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
                 s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
 
-                if getattr(edge, "is_firewall", False):
+                # Normalize status string for robust case-insensitive matching
+                edge_status = str(getattr(edge, "status", "")).upper()
+                print(f"[Render Debug] Edge {index} ({edge.u} <-> {edge.v}) status: '{edge_status}'")
+
+                # Check if edge is automatically quarantined by the Defense AI
+                if edge_status in ("QUARANTINED", "QUARANTINE", "ISOLATED", "BLOCKED"):
+                    self.create_line(
+                        s1_x, s1_y, s2_x, s2_y,
+                        fill="#FF9800",  # Amber/Orange warning color
+                        width=max(2, int(3 * zf)),
+                        dash=(4, 4)      # Dashed line pattern
+                    )
+                    
+                    # Midpoint UNLOCK override button badge (expanded bounds)
+                    mid_sx, mid_sy = (s1_x + s2_x) / 2, (s1_y + s2_y) / 2
+                    bx1, by1 = mid_sx - int(45 * zf), mid_sy - int(16 * zf)
+                    bx2, by2 = mid_sx + int(45 * zf), mid_sy + int(16 * zf)
+
+                    self.quarantine_btn_bounds[index] = (bx1, by1, bx2, by2)
+
+                    self.create_rectangle(bx1, by1, bx2, by2, fill="#E65100", outline="#FFFFFF", width=1)
+                    self.create_text(mid_sx, mid_sy, text="UNLOCK", fill="#FFFFFF", font=("Consolas", max(6, int(7 * zf)), "bold"))
+
+                elif getattr(edge, "is_firewall", False):
                     self.create_line(
                         s1_x,
                         s1_y,

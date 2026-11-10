@@ -33,7 +33,7 @@ class TelemetryData:
         
         events_section = ""
         if self.events:
-            events_section = " ── [Threat Module Actions]:\n" + "".join([f"      * {ev}\n" for ev in self.events]) + "\n"
+            events_section = " ── [Threat & Defense Actions]:\n" + "".join([f"    * {ev}\n" for ev in self.events]) + "\n"
 
         return (
             f"[STEP {self.step} | {self.sim_time_seconds}s] {engine_tag} Status: {self.status}\n"
@@ -44,7 +44,6 @@ class TelemetryData:
             f" └── Threat Level: {self.threat_level_pct:.1f}%\n"
             f"{events_section}\n"
         )
-        
 
 
 @dataclass
@@ -53,6 +52,53 @@ class SimSnapshot:
     telemetry: TelemetryData
     nodes: List
     edges: List
+
+
+class DefenseAI:
+    """Intelligent Defense AI counterpart to counter the threat propagation model."""
+    
+    @staticmethod
+    def execute_defense_turn(graph: NetworkGraph, defense_power: float, currently_infected: Set[int], adj: Dict[int, List[int]]) -> List[str]:
+        mitigation_events = []
+        
+        # 1. Identify healthy nodes directly adjacent to infected nodes (At-Risk perimeter)
+        at_risk_nodes = set()
+        for inf_idx in currently_infected:
+            for neighbor_idx in adj[inf_idx]:
+                if graph.nodes[neighbor_idx].status in ("HEALTHY", "WARNING"):
+                    at_risk_nodes.add(neighbor_idx)
+
+        # 2. Dynamic Hardening: Prioritize high-value hubs (Servers, Routers, Firewalls)
+        hub_types = {"Server", "Router", "Firewall"}
+        for node_idx in at_risk_nodes:
+            node = graph.nodes[node_idx]
+            if getattr(node, "node_type", "PC") in hub_types and defense_power > 0.3:
+                # Apply a temporary defensive shield bonus
+                node.defense_boost = getattr(node, 'defense_boost', 0.0) + (defense_power * 0.25)
+                mitigation_events.append(f"🛡️ Defense AI Hardened critical hub [{getattr(node, 'id', node_idx)}] against lateral movement.")
+
+        # 3. Automated Quarantine / Edge Severing
+        # If defense power is robust (>= 0.6), sever connections bridging infected and healthy nodes
+        if defense_power >= 0.6:
+            edges_to_quarantine = []
+            for edge in graph.edges:
+                u_inf = graph.nodes[edge.u].status == "INFECTED" or graph.nodes[edge.u].is_patient_zero
+                v_inf = graph.nodes[edge.v].status == "INFECTED" or graph.nodes[edge.v].is_patient_zero
+                
+                # If one endpoint is infected and the other is clean, quarantine the link
+                if (u_inf and not v_inf) or (v_inf and not u_inf):
+                    if getattr(edge, "status", "") != "QUARANTINED" and not getattr(edge, "is_firewall", False):
+                        edges_to_quarantine.append(edge)
+
+            # Limit quarantines per turn to simulate gradual automated response bandwidth
+            quarantine_limit = max(1, int(len(edges_to_quarantine) * 0.4))
+            for edge in edges_to_quarantine[:quarantine_limit]:
+                edge.status = "QUARANTINED"
+                u_id = getattr(graph.nodes[edge.u], 'id', f"Node-{edge.u}")
+                v_id = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
+                mitigation_events.append(f"✂️ Firewall AI automatically quarantined link between {u_id} and {v_id}.")
+
+        return mitigation_events
 
 
 class SimulationEngine:
@@ -110,7 +156,7 @@ class SimulationEngine:
         node = graph.nodes[target_idx]
         device_type = getattr(node, "node_type", "PC")
         type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
-        resistance = type_cfg.defense_multiplier if type_cfg else 1.0
+        resistance = (type_cfg.defense_multiplier if type_cfg else 1.0) + getattr(node, 'defense_boost', 0.0)
         uninfected_neighbors = sum(
             1 for n in adj[target_idx] if n not in infected_set
         )
@@ -120,7 +166,6 @@ class SimulationEngine:
         return ((uninfected_neighbors + 1) * device_weight) / max(0.5, resistance)
 
     def trigger_metasploit_manual(self, graph: NetworkGraph, target_node_idx: Optional[int] = None) -> List[str]:
-        """Manually trigger Metasploit lateral movement across infected nodes."""
         events = []
         currently_infected = [i for i, node in enumerate(graph.nodes) if node.status == "INFECTED" or node.is_patient_zero]
         
@@ -141,7 +186,6 @@ class SimulationEngine:
         return events
 
     def trigger_gerald_manual(self, graph: NetworkGraph) -> List[str]:
-        """Manually trigger Gerald password and firewall hash cracking burst."""
         events = []
         firewalls_found = False
 
@@ -153,7 +197,6 @@ class SimulationEngine:
                     req_attempts = calculate_password_search_space(edge.password)
                     edge.required_attempts = req_attempts
 
-                # Massive cracking burst on button click
                 edge.crack_attempts = getattr(edge, "crack_attempts", 0) + 35000
                 edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
                 
@@ -174,7 +217,6 @@ class SimulationEngine:
         return events
 
     def trigger_ddos_manual(self, graph: NetworkGraph, target_node_idx: int = 0) -> List[str]:
-        """Manually trigger a volumetric DDoS flood on a target node."""
         events = []
         if not graph.nodes:
             return ["DDoS: No nodes available in topology."]
@@ -188,30 +230,21 @@ class SimulationEngine:
         return events
 
     def trigger_nuke_all(self, graph: NetworkGraph) -> List[str]:
-        """Fires all threat modules simultaneously and triggers the logic bomb."""
         events = []
-        
-        # 1. Execute Metasploit lateral movement
         events.extend(self.trigger_metasploit_manual(graph))
-        
-        # 2. Execute Gerald credential cracking
         events.extend(self.trigger_gerald_manual(graph))
-        
-        # 3. Execute DDoS flood
         events.extend(self.trigger_ddos_manual(graph, target_node_idx=0))
         
-        # 4. Logic Bomb detonation sequence
         bombed = 0
         for node in graph.nodes:
             if getattr(node, 'status', 'HEALTHY') == "HEALTHY":
                 node.status = "INFECTED"
                 bombed += 1
-                if bombed >= 3:  # Force-infect up to 3 additional nodes
+                if bombed >= 3:
                     break
                     
         events.append(f"💣 Logic Bomb detonated - forcibly infected {bombed} additional node(s).")
         events.append("☢ NUKE SALVO COMPLETE")
-        
         return events
 
     def step(
@@ -221,7 +254,7 @@ class SimulationEngine:
         def_power: float,
         ai_mode: str = "Strategic AI",
     ) -> TelemetryData:
-        """Executes a single simulation tick with escalating infection potency."""
+        """Executes a single simulation tick with automated Defense AI and threat escalation."""
         self.step_counter += 1
         total_nodes = graph.node_count
         step_events: List[str] = []
@@ -230,11 +263,7 @@ class SimulationEngine:
             telemetry = TelemetryData(
                 self.step_counter,
                 "NO NODES",
-                0,
-                0,
-                0,
-                0,
-                0.0,
+                0, 0, 0, 0, 0.0,
                 escalation_factor=1.0,
                 sim_time_seconds=self.step_counter,
                 events=["No active nodes found in simulation topology."]
@@ -258,28 +287,28 @@ class SimulationEngine:
         infected_cnt = len(currently_infected)
         capture_ratio = infected_cnt / float(max(1, total_nodes))
 
-        # Base time escalation (+2% per tick, capped at 1.5x)
         time_escalation = 1.0 + min(0.5, self.step_counter * 0.02)
-
-        # Node capture multiplier: Exponential curve scaling from 1.0x up to 100.0x
         capture_escalation = 1.0 + (99.0 * (capture_ratio ** 1.5))
-
-        # Combined AI threat escalation multiplier capped at 100x max strength
         escalation_factor = min(100.0, time_escalation * capture_escalation)
         effective_inf_rate = min(1.0, inf_rate * (escalation_factor ** 0.35))
 
-        # Defense fatigue under persistent infection
         defense_fatigue = max(0.2, 1.0 - (self.step_counter * 0.015))
         effective_def_power = def_power * defense_fatigue
 
-        # 1. Build Adjacency Map (Excludes Intact Active Firewalls)
+        # 1. Build Adjacency Map (Excludes Intact Active Firewalls & Quarantined Edges)
         adj: Dict[int, List[int]] = {i: [] for i in range(total_nodes)}
         for edge in graph.edges:
-            if getattr(edge, "is_firewall", False):
+            if getattr(edge, "is_firewall", False) or getattr(edge, "status", "") == "QUARANTINED":
                 continue
             if edge.u < total_nodes and edge.v < total_nodes:
                 adj[edge.u].append(edge.v)
                 adj[edge.v].append(edge.u)
+
+        # -------------------------------------------------------------
+        # PHASE 1: EXECUTE AUTOMATED DEFENSE AI TURN
+        # -------------------------------------------------------------
+        defense_events = DefenseAI.execute_defense_turn(graph, effective_def_power, currently_infected, adj)
+        step_events.extend(defense_events)
 
         # -------------------------------------------------------------
         # PHASE A: INFECTION SPREAD
@@ -313,7 +342,7 @@ class SimulationEngine:
                 best_node = graph.nodes[best_target_idx]
                 device_type = getattr(best_node, "node_type", "PC")
                 type_cfg = NODE_TYPES.get(device_type, NODE_TYPES["PC"])
-                type_mult = type_cfg.defense_multiplier if type_cfg else 1.0
+                type_mult = (type_cfg.defense_multiplier if type_cfg else 1.0) + getattr(best_node, 'defense_boost', 0.0)
                 attack_pressure = effective_inf_rate * (
                     1.0 + 0.5 * attack_candidates[best_target_idx]
                 )
@@ -337,7 +366,7 @@ class SimulationEngine:
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
-                    t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
+                    t_mult = (t_cfg.defense_multiplier if t_cfg else 1.0) + getattr(t_node, 'defense_boost', 0.0)
                     t_block = min(0.90, effective_def_power * 0.7 * t_mult)
                     if (
                         random.random() < effective_inf_rate
@@ -349,7 +378,7 @@ class SimulationEngine:
                     t_node = graph.nodes[target_idx]
                     t_type = getattr(t_node, "node_type", "PC")
                     t_cfg = NODE_TYPES.get(t_type, NODE_TYPES["PC"])
-                    t_mult = t_cfg.defense_multiplier if t_cfg else 1.0
+                    t_mult = (t_cfg.defense_multiplier if t_cfg else 1.0) + getattr(t_node, 'defense_boost', 0.0)
                     block_chance = min(0.90, effective_def_power * 0.75 * t_mult)
                     if (
                         random.random() < effective_inf_rate
@@ -379,11 +408,11 @@ class SimulationEngine:
                 if random.random() < p0_neutralize_chance:
                     node.is_patient_zero = False
                     recovered_this_step.add(inf_idx)
-                    step_events.append(f"Defense: Patient Zero neutralized at Node {getattr(node, 'id', inf_idx)}!")
+                    step_events.append(f"Defense AI: Patient Zero neutralized at Node {getattr(node, 'id', inf_idx)}!")
             else:
                 if random.random() < recovery_chance:
                     recovered_this_step.add(inf_idx)
-                    step_events.append(f"Defense: Node {getattr(node, 'id', inf_idx)} successfully sanitized and recovered.")
+                    step_events.append(f"Defense AI: Node {getattr(node, 'id', inf_idx)} successfully sanitized and recovered.")
 
         # Apply state updates
         for idx in newly_infected:
@@ -411,6 +440,8 @@ class SimulationEngine:
                     node.status = "HEALTHY"
 
         for edge in graph.edges:
+            if getattr(edge, "status", "") == "QUARANTINED":
+                continue
             if getattr(edge, "is_firewall", False) and getattr(
                 edge, "crack_progress", 0.0
             ) > 0.0:

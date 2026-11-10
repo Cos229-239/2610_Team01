@@ -129,7 +129,7 @@ class NetworkGraph:
             ip_address = ip_address or auto_ip
             subnet = subnet or auto_subnet
         else:
-            self._next_subnet += 1  # Fixed typo: _netd_subnet -> _next_subnet
+            self._next_subnet += 1
 
         new_node = Node(
             id=node_id,
@@ -244,20 +244,22 @@ class NetworkGraph:
         return False
 
     def reset_states(self):
-        """Resets all node and edge statuses, restores Patient Zero, and disarms firewalls."""
+        """Resets node statuses, restores Patient Zero, and clears infection/crack progress 
+        while preserving active defensive quarantines unless explicitly reset.
+        """
         p0_idx = self.get_patient_zero_index() if self.nodes else 0
 
         for i, node in enumerate(self.nodes):
             node.status = "HEALTHY"
             node.is_patient_zero = (i == p0_idx)
+            node.infection_step = -1
 
         for edge in self.edges:
-            edge.status = "HEALTHY"
-            edge.is_firewall = False
-            edge.password = ""
+            # Preserve QUARANTINED status unless reset is full, but clear infection/cracking
+            if edge.status != "QUARANTINED":
+                edge.status = "HEALTHY"
             edge.crack_progress = 0.0
             edge.crack_attempts = 0
-            edge.required_attempts = 0
 
     def clear(self):
         """Clears all nodes and edges from the graph instance."""
