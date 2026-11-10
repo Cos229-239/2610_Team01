@@ -969,8 +969,10 @@ class SimulatorApp(ctk.CTk):
             node.status = "HEALTHY"
             node.is_patient_zero = (i == p0_idx)
 
+        # Preserve QUARANTINED status on edges unless explicitly reset
         for edge in self.graph.edges:
-            edge.status = "HEALTHY"
+            if getattr(edge, "status", "") != "QUARANTINED":
+                edge.status = "HEALTHY"
 
         self.net_canvas.render()
 
