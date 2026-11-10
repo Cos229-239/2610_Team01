@@ -339,7 +339,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
         if "show ip interface" in command.lower():
-            return "Interface                 IP-Address      OK? Method Status                  Protocol\nFastEthernet0/0           192.168.1.1     YES manual up                     up"
+            return "Interface                 IP-Address     OK? Method Status                     Protocol\nFastEthernet0/0           192.168.1.1    YES manual up                       up"
 
         if "show ip route" in command.lower():
             return "Codes: C - connected, s - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
@@ -714,7 +714,7 @@ class NetworkCanvas(ctk.CTkCanvas):
 
         zf = self.zoom_factor
 
-        # 1. Render Edges & Firewall Security Barriers
+        # 1. Render Edges, Firewalls, and Quarantined Links
         for index, edge in enumerate(self.graph.edges):
             if 0 <= edge.u < len(self.graph.nodes) and 0 <= edge.v < len(
                 self.graph.nodes
@@ -723,7 +723,15 @@ class NetworkCanvas(ctk.CTkCanvas):
                 s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
                 s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
 
-                if getattr(edge, "is_firewall", False):
+                # Check if edge is automatically quarantined by the Defense AI
+                if getattr(edge, "status", "") == "QUARANTINED":
+                    self.create_line(
+                        s1_x, s1_y, s2_x, s2_y,
+                        fill="#FF9800",  # Amber/Orange warning color
+                        width=max(2, int(3 * zf)),
+                        dash=(4, 4)      # Dashed line pattern
+                    )
+                elif getattr(edge, "is_firewall", False):
                     self.create_line(
                         s1_x,
                         s1_y,
