@@ -1,4 +1,5 @@
 import random
+import string
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple, Optional
@@ -90,23 +91,34 @@ class DefenseAI:
                 node.defense_boost = getattr(node, 'defense_boost', 0.0) + (defense_power * 0.25)
                 mitigation_events.append(f"🛡️ Defense AI Hardened critical hub [{getattr(node, 'id', node_idx)}] against lateral movement.")
 
-        # 3. Automated Quarantine / Edge Severing
-        if defense_power >= 0.6:
-            edges_to_quarantine = []
+        # 3. Automated Firewall Deployment / Perimeter Locking
+        if defense_power >= 0.4:
+            edges_to_lock = []
             for edge in graph.edges:
                 u_inf = graph.nodes[edge.u].status == "INFECTED" or graph.nodes[edge.u].is_patient_zero
                 v_inf = graph.nodes[edge.v].status == "INFECTED" or graph.nodes[edge.v].is_patient_zero
                 
                 if (u_inf and not v_inf) or (v_inf and not u_inf):
-                    if getattr(edge, "status", "") != "QUARANTINED" and not getattr(edge, "is_firewall", False) and getattr(edge, "status", "") != "BREACHED":
-                        edges_to_quarantine.append(edge)
+                    if not getattr(edge, "is_firewall", False) and getattr(edge, "status", "") != "BREACHED":
+                        edges_to_lock.append(edge)
 
-            quarantine_limit = max(1, int(len(edges_to_quarantine) * 0.4))
-            for edge in edges_to_quarantine[:quarantine_limit]:
-                edge.status = "QUARANTINED"
+            lock_limit = max(1, int(len(edges_to_lock) * 0.4))
+            for edge in edges_to_lock[:lock_limit]:
+                edge.is_firewall = True
+                edge.status = "HEALTHY"
+                
+                # Generate random alphanumeric password between 3 and 10 characters
+                length = random.randint(3, 6)
+                chars = string.ascii_letters + string.digits
+                edge.password = "".join(random.choices(chars, k=length))
+                
+                edge.required_attempts = calculate_password_search_space(edge.password)
+                edge.crack_progress = 0.0
+                edge.crack_attempts = 0
+
                 u_id = getattr(graph.nodes[edge.u], 'id', f"Node-{edge.u}")
                 v_id = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
-                mitigation_events.append(f"✂️ Firewall AI automatically quarantined link between {u_id} and {v_id}.")
+                mitigation_events.append(f"🛡️ Defense AI deployed firewall lock ({edge.password}) on perimeter link between {u_id} and {v_id}.")
 
         return mitigation_events
 
