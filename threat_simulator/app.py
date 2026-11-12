@@ -883,6 +883,15 @@ class SimulatorApp(ctk.CTk):
         else:
             ctk.set_appearance_mode("Light")
 
+    def toggle_colorblind(self, enabled: bool):
+        """Enable or disable colorblind-friendly mode."""
+        self.settings["colorblind_mode"] = enabled
+
+        # Tell the canvas to switch color palettes
+        if hasattr(self, "canvas_wrapper"):
+            self.canvas_wrapper.set_colorblind_mode(enabled)
+            
+
     # ------------------------------------------------------------------
     # Simulation Loop Controls
     # ------------------------------------------------------------------
