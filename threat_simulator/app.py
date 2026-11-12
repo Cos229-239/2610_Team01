@@ -22,6 +22,7 @@ from ui.tooltip import ToolTip
 from ui.assistant import ClippyAssistant
 from ui.pdu_controls import PDUControlPanel
 from utils.theme_loader import ThemeManager
+from ui.documentation import DocumentationWindow
 
 # --- DEPENDENCY-FREE THEME AUDIO MANAGER ---
 import platform
@@ -741,6 +742,7 @@ class SimulatorApp(ctk.CTk):
 
         help_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Documentation", command=self.open_documentation)
         help_menu.add_command(label="About", command=self._show_about)
 
     def _show_about(self):
@@ -767,6 +769,10 @@ class SimulatorApp(ctk.CTk):
         ctk.CTkButton(about, text="Close", width=100, command=about.destroy).pack(
             pady=15
         )
+
+    def open_documentation(self):
+        """Opens the in-app documentation window."""
+        DocumentationWindow(self)
 
     def on_node_selected(self, node_index: int):
         if 0 <= node_index < len(self.graph.nodes):
