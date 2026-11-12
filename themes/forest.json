@@ -1,0 +1,30 @@
+{
+  "$schema": "./theme_schema.json",
+  "name": "Forest",
+  "author": "System",
+  "appearance_mode": "Light",
+  "canvas_bg": "#94D799",
+  "status_colors": {
+    "HEALTHY": "#63B340",
+    "WARNING": "#D6771E",
+    "INFECTED": "#DB0049"
+  },
+  "edge_colors": {
+    "HEALTHY": "#63B340",
+    "WARNING": "#D6771E",
+    "INFECTED": "#DB0049"
+  },
+  "pdu_colors": {
+    "ICMP": "#110e1b",
+    "ARP": "#110e1b",
+    "TCP": "#110e1b",
+    "INFECT": "#ff0054"
+  },
+  "clippy": {
+    "window_bg": "#273828",
+    "bubble_bg": "#94D799",
+    "text_color": "#94D799",
+    "border_color": "#436145",
+    "avatar": "[🤖 CYBER-CLIPPY]"
+  }
+}

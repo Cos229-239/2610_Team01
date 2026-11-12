@@ -1,0 +1,30 @@
+{
+  "$schema": "./theme_schema.json",
+  "name": "Pure",
+  "author": "System",
+  "appearance_mode": "Light",
+  "canvas_bg": "#FFFADB",
+  "status_colors": {
+    "HEALTHY": "#69F0AE",
+    "WARNING": "#FFB555",
+    "INFECTED": "#FF807B"
+  },
+  "edge_colors": {
+    "HEALTHY": "#8b5a2b",
+    "WARNING": "#FFB555",
+    "INFECTED": "#FF807B"
+  },
+  "pdu_colors": {
+    "ICMP": "#110e1b",
+    "ARP": "#110e1b",
+    "TCP": "#110e1b",
+    "INFECT": "#ff0054"
+  },
+  "clippy": {
+    "window_bg": "#FFFADB",
+    "bubble_bg": "#FFF67E",
+    "text_color": "#8b5a2b",
+    "border_color": "#8b5a2b",
+    "avatar": "[🤖 CYBER-CLIPPY]"
+  }
+}
