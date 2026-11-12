@@ -3,6 +3,27 @@ import re
 
 
 class DocumentationWindow(ctk.CTkToplevel):
+    GLOSSARY_ENTRIES = [
+        ("Node", "Any device on the network (PC, router, server, switch, etc.)."),
+        ("Edge / Link", "A connection between two nodes. Infection and data travel along edges."),
+        ("Topology", "The arrangement of nodes and links (Ring, Mesh, Star, or custom)."),
+        ("Patient Zero", "The first infected node. The outbreak starts here."),
+        ("Lateral movement", "When a threat moves from an already infected machine to other machines on the same network."),
+        ("Firewall (in this sim)", "A barrier on a link that can block or slow infection until its password is cracked."),
+        ("Infection Rate", "How aggressively infected nodes try to spread to neighbors each step."),
+        ("Defense Power", "How strongly the network resists infection and how easily nodes recover."),
+        ("Strategic AI", "Spread logic that prefers high-value targets (routers, well-connected nodes)."),
+        ("Uniform AI", "Spread logic that chooses targets more randomly."),
+        ("Metasploit (module)", "Simulated exploit / lateral-movement attack against a selected node."),
+        ("Gerald (module)", "Simulated password/hash cracking. Can break firewalls on links."),
+        ("DDoS (module)", "Simulated flood of traffic meant to overwhelm a target node."),
+        ("Nuke", "Fires all threat modules at once, plus a large forced-infection effect."),
+        ("Telemetry", "Live stats and event log: time, infected count, threat level, and step history."),
+        ("Botnet Power", "How strong the outbreak has become (escalation factor). Higher means faster, harder-to-stop spread."),
+        ("Quarantine", "Isolating a link or node so the infection cannot use that path."),
+        ("Subnet", "A logical group of addresses. Crossing subnets can be harder for a threat than staying inside one."),
+    ]
+
     def __init__(self, master):
         super().__init__(master)
         self.title("Documentation – Adaptive AI Outbreak & Threat Simulator")
@@ -10,6 +31,8 @@ class DocumentationWindow(ctk.CTkToplevel):
         self.minsize(760, 500)
         self.transient(master)
         self.focus_force()
+
+        self._current_topic = "Overview"
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -35,7 +58,9 @@ class DocumentationWindow(ctk.CTkToplevel):
         ).grid(row=1, column=0, padx=20, pady=(0, 14), sticky="w")
 
         # ---------- Sidebar ----------
-        sidebar = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=("gray95", "gray14"))
+        sidebar = ctk.CTkFrame(
+            self, width=230, corner_radius=0, fg_color=("gray95", "gray14")
+        )
         sidebar.grid(row=1, column=0, sticky="nsw")
         sidebar.grid_propagate(False)
         sidebar.grid_rowconfigure(1, weight=1)
@@ -54,10 +79,26 @@ class DocumentationWindow(ctk.CTkToplevel):
         self.topic_list.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 12))
 
         # ---------- Content area ----------
-        content_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=("gray98", "gray10"))
+        content_frame = ctk.CTkFrame(
+            self, corner_radius=0, fg_color=("gray98", "gray10")
+        )
         content_frame.grid(row=1, column=1, sticky="nsew")
-        content_frame.grid_rowconfigure(0, weight=1)
+        content_frame.grid_rowconfigure(1, weight=1)
         content_frame.grid_columnconfigure(0, weight=1)
+
+        # Search bar (Glossary only)
+        self.search_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        self.search_frame.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 0))
+        self.search_frame.grid_columnconfigure(0, weight=1)
+
+        self.search_entry = ctk.CTkEntry(
+            self.search_frame,
+            placeholder_text="Search glossary…",
+            height=32,
+        )
+        self.search_entry.grid(row=0, column=0, sticky="ew")
+        self.search_entry.bind("<KeyRelease>", self._on_search)
+        self.search_frame.grid_remove()
 
         self.content_box = ctk.CTkTextbox(
             content_frame,
@@ -67,14 +108,18 @@ class DocumentationWindow(ctk.CTkToplevel):
             border_width=0,
             corner_radius=0,
         )
-        self.content_box.grid(row=0, column=0, sticky="nsew", padx=24, pady=18)
+        self.content_box.grid(row=1, column=0, sticky="nsew", padx=24, pady=18)
 
-        # Text tags for formatting
+        # Text tags
         self.content_box._textbox.tag_configure(
             "h1", font=("Segoe UI", 18, "bold"), foreground="#3B82F6", spacing3=8
         )
         self.content_box._textbox.tag_configure(
-            "h2", font=("Segoe UI", 14, "bold"), foreground="#F59E0B", spacing1=12, spacing3=4
+            "h2",
+            font=("Segoe UI", 14, "bold"),
+            foreground="#F59E0B",
+            spacing1=12,
+            spacing3=4,
         )
         self.content_box._textbox.tag_configure(
             "bold", font=("Segoe UI", 13, "bold")
@@ -91,7 +136,7 @@ class DocumentationWindow(ctk.CTkToplevel):
 
         self.content_box.configure(state="disabled")
 
-        # ---------- Topics ----------
+        # Static topics (Glossary is built dynamically)
         self.topics = {
             "Overview": self._overview(),
             "What is a Network?": self._what_is_a_network(),
@@ -106,6 +151,7 @@ class DocumentationWindow(ctk.CTkToplevel):
             "Telemetry Panel": self._telemetry(),
             "Settings & Themes": self._settings(),
             "Tips & Easter Eggs": self._tips(),
+            "Glossary": "",
         }
 
         self.topic_buttons = {}
@@ -128,6 +174,8 @@ class DocumentationWindow(ctk.CTkToplevel):
         self.show_topic("Overview")
 
     def show_topic(self, topic: str):
+        self._current_topic = topic
+
         for name, btn in self.topic_buttons.items():
             if name == topic:
                 btn.configure(
@@ -142,15 +190,28 @@ class DocumentationWindow(ctk.CTkToplevel):
                     hover_color=("gray85", "gray25"),
                 )
 
-        content = self.topics.get(topic, "Topic not found.")
+        if topic == "Glossary":
+            self.search_frame.grid()
+            self.search_entry.delete(0, "end")
+            content = self._glossary("")
+        else:
+            self.search_frame.grid_remove()
+            content = self.topics.get(topic, "Topic not found.")
+
+        self._insert_formatted(content)
+
+    def _on_search(self, event=None):
+        if getattr(self, "_current_topic", None) != "Glossary":
+            return
+        query = self.search_entry.get()
+        content = self._glossary(filter_text=query)
         self._insert_formatted(content)
 
     def _insert_formatted(self, text: str):
-        """Parse simple markers and apply color / bold tags."""
         self.content_box.configure(state="normal")
         self.content_box.delete("1.0", "end")
 
-        tb = self.content_box._textbox  # underlying tk Text
+        tb = self.content_box._textbox
 
         for line in text.split("\n"):
             stripped = line.strip()
@@ -159,23 +220,18 @@ class DocumentationWindow(ctk.CTkToplevel):
                 tb.insert("end", "\n")
                 continue
 
-            # Main title (ALL CAPS line at start of section)
             if stripped.isupper() and len(stripped) > 3 and not stripped.startswith("•"):
                 tb.insert("end", stripped + "\n", ("h1",))
                 continue
 
-            # Subheading (line that ends with nothing special but we mark with ## in source)
             if stripped.startswith("## "):
                 tb.insert("end", stripped[3:] + "\n", ("h2",))
                 continue
 
-            # Tip lines
             if stripped.lower().startswith("tip:"):
                 tb.insert("end", stripped + "\n", ("tip",))
                 continue
 
-            # Highlight important terms wrapped in ** **
-            # Example: This is **important** text
             parts = re.split(r"(\*\*[^*]+\*\*)", line)
             for part in parts:
                 if part.startswith("**") and part.endswith("**"):
@@ -186,8 +242,28 @@ class DocumentationWindow(ctk.CTkToplevel):
 
         self.content_box.configure(state="disabled")
 
+    def _glossary(self, filter_text: str = "") -> str:
+        q = (filter_text or "").strip().lower()
+        lines = ["GLOSSARY", ""]
+
+        matches = 0
+        for term, definition in self.GLOSSARY_ENTRIES:
+            if q and q not in term.lower() and q not in definition.lower():
+                continue
+            lines.append(f"## {term}")
+            lines.append(definition)
+            lines.append("")
+            matches += 1
+
+        if q and matches == 0:
+            lines.append(f'No glossary entries match “{filter_text}".')
+        elif not q:
+            lines.append("Tip: Type in the search box above to filter terms.")
+
+        return "\n".join(lines)
+
     # ------------------------------------------------------------------
-    # Content (use ## for subheadings, **text** for highlights)
+    # Content
     # ------------------------------------------------------------------
     def _overview(self) -> str:
         return """OVERVIEW
@@ -387,6 +463,7 @@ The right-hand panel shows live information:
 • **Botnet Power Gauge** (how strong the outbreak has become)
 • Details of the currently selected node
 • Scrollable event log
+• **What just happened?** plain-language summary of the latest step
 
 Clicking items in the log lets you jump back to that moment in the simulation history.
 """
@@ -399,6 +476,7 @@ Open Settings from the toolbar or the Edit menu.
 • **UI Theme Palette** – Change the visual style of the app
 • **Dark Mode Override**
 • **Background Music** – Turn music on/off and adjust volume
+• **What just happened?** – Show or hide the plain-language step summary
 • **Colorblind Mode** (View menu) – Switches to a colorblind-friendly palette for node/edge status colors
 
 Themes are loaded from JSON files in the themes folder. You can add your own and press Reload.
@@ -413,4 +491,5 @@ Themes are loaded from JSON files in the themes folder. You can add your own and
 • Try the same infection settings on Ring vs Mesh vs Star and compare the results
 • Use the **Analytics** button for live graphs of the outbreak
 • The floating Help assistant (📎) can give contextual guidance while you work
+• Open **Help → Glossary** and use the search box to look up terms
 """

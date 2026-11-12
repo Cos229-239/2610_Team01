@@ -328,7 +328,7 @@ class SimulatorApp(ctk.CTk):
         )
         self.slider_inf.set(0.3)
         self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
-        ToolTip(self.slider_inf, "Controls how likely an infected node is to spread the outbreak.")
+        ToolTip(self.slider_inf, "Infection Rate: how likely the outbreak is to spread each step.")
 
         ctk.CTkLabel(slider_frame, text="Defense Power:").grid(row=0, column=2, padx=5, pady=5)
         self.def_value_label = ctk.CTkLabel(slider_frame, text="0.5")
@@ -342,7 +342,7 @@ class SimulatorApp(ctk.CTk):
         )
         self.slider_def.set(0.5)
         self.slider_def.grid(row=0, column=3, padx=5, pady=5)
-        ToolTip(self.slider_def, "Increase the network's ability to resist infection.")
+        ToolTip(self.slider_def, "Defense Power: resistance to infection and chance of recovery.")
 
         self.canvas_wrapper = CanvasView(left_frame, self.sim_engine)
         self.net_canvas = self.canvas_wrapper.canvas
@@ -669,6 +669,10 @@ class SimulatorApp(ctk.CTk):
         help_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Documentation", command=self.open_documentation)
+        help_menu.add_command(
+            label="Glossary",
+            command=lambda: self.open_documentation("Glossary"),
+        )
         help_menu.add_command(label="About", command=self._show_about)
 
     def _show_about(self):
@@ -692,8 +696,11 @@ class SimulatorApp(ctk.CTk):
         ).pack(pady=5)
         ctk.CTkButton(about, text="Close", width=100, command=about.destroy).pack(pady=15)
 
-    def open_documentation(self):
-        DocumentationWindow(self)
+    def open_documentation(self, topic: str = None):
+        """Opens the documentation window, optionally on a specific topic."""
+        win = DocumentationWindow(self)
+        if topic:
+            win.show_topic(topic)
 
     def on_node_selected(self, node_index: int):
         if 0 <= node_index < len(self.graph.nodes):
