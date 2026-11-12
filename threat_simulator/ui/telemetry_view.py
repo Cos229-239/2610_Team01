@@ -6,7 +6,7 @@ class TelemetryPanel(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        self.grid_rowconfigure(4, weight=1)
+        self.grid_rowconfigure(5, weight=1)  # log row expands
         self.grid_columnconfigure(0, weight=1)
 
         # Title
@@ -14,9 +14,31 @@ class TelemetryPanel(ctk.CTkFrame):
             self, text="Live Telemetry & Metrics", font=("Arial", 16, "bold")
         ).grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
+        # "What just happened?" summary
+        self.what_happened_frame = ctk.CTkFrame(self, fg_color=("gray90", "gray20"))
+        self.what_happened_frame.grid(row=1, column=0, padx=10, pady=(0, 6), sticky="ew")
+        self.what_happened_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self.what_happened_frame,
+            text="What just happened?",
+            font=("Arial", 11, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, padx=8, pady=(6, 0), sticky="w")
+
+        self.what_happened_label = ctk.CTkLabel(
+            self.what_happened_frame,
+            text="Start the simulation to see a plain-language summary of each step.",
+            font=("Arial", 12),
+            anchor="w",
+            justify="left",
+            wraplength=320,
+        )
+        self.what_happened_label.grid(row=1, column=0, padx=8, pady=(2, 8), sticky="w")
+
         # Live Metrics Strip
         metrics_frame = ctk.CTkFrame(self, fg_color=("gray90", "gray20"))
-        metrics_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
+        metrics_frame.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
         metrics_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         # Time
@@ -55,9 +77,9 @@ class TelemetryPanel(ctk.CTkFrame):
         )
         self.status_label.grid(row=1, column=3, padx=5, pady=(0, 8))
 
-        # --- BOTNET THREAT MULTIPLIER GAUGE (1.0x - 100.0x) ---
+        # Botnet Threat Multiplier Gauge
         botnet_frame = ctk.CTkFrame(self, fg_color=("gray90", "gray20"))
-        botnet_frame.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
+        botnet_frame.grid(row=3, column=0, padx=10, pady=5, sticky="ew")
         botnet_frame.grid_columnconfigure(0, weight=1)
 
         header_box = ctk.CTkFrame(botnet_frame, fg_color="transparent")
@@ -78,38 +100,28 @@ class TelemetryPanel(ctk.CTkFrame):
 
         # Selected Node Information
         self.node_info_frame = ctk.CTkFrame(self)
-        self.node_info_frame.grid(
-            row=3,
-            column=0,
-            padx=10,
-            pady=5,
-            sticky="ew"
-        )
+        self.node_info_frame.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
 
         ctk.CTkLabel(
             self.node_info_frame,
             text="Selected Node",
-            font=("Arial", 14, "bold")
+            font=("Arial", 14, "bold"),
         ).pack(anchor="w", padx=5, pady=(5, 2))
 
         self.node_info_label = ctk.CTkLabel(
             self.node_info_frame,
             text="No node selected",
-            justify="left"
+            justify="left",
         )
-        self.node_info_label.pack(
-            anchor="w",
-            padx=5,
-            pady=(0, 5)
-        )
+        self.node_info_label.pack(anchor="w", padx=5, pady=(0, 5))
 
         # Scrolling Log
         self.log_box = ctk.CTkTextbox(self, font=("Courier", 12))
-        self.log_box.grid(row=4, column=0, padx=10, pady=10, sticky="nsew")
+        self.log_box.grid(row=5, column=0, padx=10, pady=10, sticky="nsew")
 
         # Navigation bar
         nav_frame = ctk.CTkFrame(self)
-        nav_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
+        nav_frame.grid(row=6, column=0, padx=10, pady=(0, 10), sticky="ew")
         nav_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         self.btn_back = ctk.CTkButton(
@@ -127,6 +139,7 @@ class TelemetryPanel(ctk.CTkFrame):
 
         self.log_box.bind("<Button-1>", self._on_log_click)
         self._log_step_map = {}
+        self._last_infected = 0
 
     def _update_metrics_and_gauge(self, data: TelemetryData):
         """Helper to update all live metric labels and the botnet gauge."""
@@ -148,9 +161,9 @@ class TelemetryPanel(ctk.CTkFrame):
             self.threat_label.configure(text_color=("#2E7D32", "#69F0AE"))
             self.status_label.configure(text_color=("#2E7D32", "#69F0AE"))
 
-        # --- UPDATE BOTNET POWER GAUGE ---
+        # Update botnet power gauge
         power_x = getattr(data, "escalation_factor", 1.0)
-        
+
         # Map 1.0x -> 100.0x onto 0.0 -> 1.0 progress range
         gauge_val = min(1.0, max(0.01, (power_x - 1.0) / 99.0))
         self.botnet_gauge.set(gauge_val)
@@ -184,6 +197,7 @@ class TelemetryPanel(ctk.CTkFrame):
 
         self.log_box.see("end")
         self._update_indicator()
+        self.update_what_happened(data)
 
     def append_raw_event(self, source: str, message: str):
         """Appends a raw event or system log message directly to the telemetry text box."""
@@ -191,9 +205,10 @@ class TelemetryPanel(ctk.CTkFrame):
         self.log_box.see("end")
 
     def show_snapshot(self, data: TelemetryData, history_index: int):
-        """Called when user jumps to a past step – updates metrics and gauge only."""
+        """Called when user jumps to a past step – updates metrics and gauge."""
         self._update_metrics_and_gauge(data)
         self._update_indicator(history_index)
+        self.update_what_happened(data)
 
     def _update_indicator(self, current: int = None):
         engine = self.master.sim_engine
@@ -241,4 +256,73 @@ class TelemetryPanel(ctk.CTkFrame):
         self.botnet_gauge.set(0.01)
         self.botnet_gauge.configure(progress_color="#69F0AE")
         self._log_step_map.clear()
+        self._last_infected = 0
+        self.what_happened_label.configure(
+            text="Start the simulation to see a plain-language summary of each step."
+        )
         self._update_indicator()
+
+    def set_what_happened_visible(self, visible: bool):
+        """Show or hide the 'What just happened?' summary."""
+        if visible:
+            self.what_happened_frame.grid()
+        else:
+            self.what_happened_frame.grid_remove()
+
+    def update_what_happened(self, data: TelemetryData):
+        """Turn telemetry + events into a short plain-language summary."""
+        if data is None:
+            return
+
+        infected = data.infected_nodes
+        total = max(1, data.total_nodes)
+        events = data.events or []
+
+        # Prefer concrete events when available
+        interesting = [
+            e for e in events
+            if any(
+                k in e.lower()
+                for k in (
+                    "breach",
+                    "infected",
+                    "cracked",
+                    "gerald",
+                    "metasploit",
+                    "ddos",
+                    "neutralized",
+                    "recovered",
+                    "nuke",
+                    "patient zero",
+                )
+            )
+        ]
+
+        if interesting:
+            summary = " ".join(interesting[:2])
+            if len(summary) > 220:
+                summary = summary[:217] + "..."
+        elif infected == 0:
+            summary = "The network is fully clean. No active infection."
+        elif infected == total:
+            summary = "Every node is infected. The network is fully compromised."
+        elif infected > getattr(self, "_last_infected", 0):
+            gained = infected - getattr(self, "_last_infected", 0)
+            summary = (
+                f"The outbreak spread to {gained} more node(s). "
+                f"{infected}/{total} nodes are now infected."
+            )
+        elif infected < getattr(self, "_last_infected", infected):
+            lost = getattr(self, "_last_infected", infected) - infected
+            summary = (
+                f"Defenses recovered {lost} node(s). "
+                f"{infected}/{total} nodes remain infected."
+            )
+        else:
+            summary = (
+                f"No major change this step. "
+                f"{infected}/{total} nodes are infected."
+            )
+
+        self._last_infected = infected
+        self.what_happened_label.configure(text=summary)
