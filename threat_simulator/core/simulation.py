@@ -129,6 +129,7 @@ class SimulationEngine:
         self.total_recovered_count: int = 0
         self.history: List[SimSnapshot] = []
         self.history_index: int = -1
+        self._active_graph_nodes: List = []
         # Initialize threat module instances
         self.msf_module = MetasploitAttack("SMB Buffer Overflow", "Pivot Proxy", exploit_potency=45)
         self.gerald_module = GeraldTheSlightFrayer()
@@ -138,8 +139,10 @@ class SimulationEngine:
         self.total_recovered_count = 0
         self.history.clear()
         self.history_index = -1
+        self._active_graph_nodes = []
 
         if graph:
+            self._active_graph_nodes = graph.nodes
             # 1. Reset all nodes to healthy and remove patient zero / boosts
             for node in graph.nodes:
                 node.status = "HEALTHY"
@@ -175,6 +178,7 @@ class SimulationEngine:
         snap = self.history[index]
         graph.nodes = deepcopy(snap.nodes)
         graph.edges = deepcopy(snap.edges)
+        self._active_graph_nodes = graph.nodes
         self.history_index = index
         self.step_counter = snap.step
         return snap.telemetry
@@ -184,6 +188,19 @@ class SimulationEngine:
 
     def can_step_forward(self) -> bool:
         return self.history_index < len(self.history) - 1
+
+    def deploy_federal_intervention(self, defense_power: float, active_node_count: int) -> dict:
+        """Executes a high-level federal countermeasure to sanitize infected nodes."""
+        sanitized_count = 0
+        for node in self._active_graph_nodes:
+            if getattr(node, "status", "") == "INFECTED":
+                node.status = "HEALTHY"
+                sanitized_count += 1
+                self.total_recovered_count += 1
+
+        return {
+            "message": f"Federal cyber command deployed! Sanitized {sanitized_count} infected nodes with {defense_power * 100:.0f}% tactical defense boost."
+        }
 
     def _calculate_target_priority(
         self,
@@ -293,6 +310,7 @@ class SimulationEngine:
     ) -> TelemetryData:
         """Executes a single simulation tick with automated Defense AI and balanced threat escalation."""
         self.step_counter += 1
+        self._active_graph_nodes = graph.nodes
         total_nodes = graph.node_count
         step_events: List[str] = []
 
