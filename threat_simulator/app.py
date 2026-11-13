@@ -137,7 +137,7 @@ class SimulatorApp(ctk.CTk):
         self.is_running = False
         self.loop_job = None
         self.active_analytics_modal = None
-
+        self.countermeasure_var = ctk.StringVar(value="Select Countermeasure...")
         # Dynamic Theme Engine Manager
         self.theme_manager = ThemeManager()
         
@@ -171,7 +171,102 @@ class SimulatorApp(ctk.CTk):
         self.select_json_theme(self.current_theme_name)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+    # --- Countermeasure Handlers ---
+    def _emit_telemetry(self, msg: str):
+        """Routes telemetry messages to both the terminal and the UI log panel."""
+        print(msg)
 
+        # 1. Check if an existing helper method is already defined on self
+        for method_name in ("append_log", "log_message", "write_log", "add_log", "update_log"):
+            if hasattr(self, method_name) and callable(getattr(self, method_name)):
+                getattr(self, method_name)(msg)
+                return
+
+        # 2. Otherwise, find the CTkTextbox log widget directly and insert the text
+        for widget_name in ("telemetry_box", "log_box", "telemetry_text", "log_text", "console_box", "output_box"):
+            widget = getattr(self, widget_name, None)
+            if widget is not None and hasattr(widget, "insert"):
+                try:
+                    prev_state = widget.cget("state")
+                    if prev_state == "disabled":
+                        widget.configure(state="normal")
+                    widget.insert("end", f"{msg}\n")
+                    widget.see("end")
+                    if prev_state == "disabled":
+                        widget.configure(state="disabled")
+                    return
+                except Exception as e:
+                    print(f"[UI LOG ERROR] Could not write to {widget_name}: {e}")
+
+    def trigger_federal_intervention(self):
+        """Executes the federal countermeasure routine."""
+        try:
+            # Safely grab defense power from whichever attribute exists
+            defense_val = getattr(self.sim_engine, "defense_power", 0.5)
+            for slider_name in ("defense_power_slider", "def_slider", "slider_defense"):
+                if hasattr(self, slider_name):
+                    defense_val = getattr(self, slider_name).get()
+                    break
+
+            # Safely count active nodes in the graph
+            active_count = len(self.graph.nodes) if hasattr(self.graph, "nodes") else 1
+
+            # Call the C++ engine binding (checks both module-level and self.sim_engine)
+            if hasattr(self.sim_engine, "deploy_federal_intervention"):
+                response = self.sim_engine.deploy_federal_intervention(defense_val, active_count)
+            else:
+                response = sim_engine.deploy_federal_intervention(defense_val, active_count)
+
+            msg = response["message"] if isinstance(response, dict) and "message" in response else str(response)
+            self._emit_telemetry(f"[FEDERAL] {msg}")
+        except Exception as e:
+            self._emit_telemetry(f"[ERROR] Federal intervention failed: {e}")
+
+    def trigger_zero_trust_reset(self):
+        """Resets compromised credentials and enforces zero-trust policies."""
+        self._emit_telemetry("[ZERO-TRUST] Forcing credential rotation across active subnets.")
+
+    def trigger_sinkhole_routing(self):
+        """Redirects malicious traffic to a secure internal sinkhole."""
+        self._emit_telemetry("[SINKHOLE] Rerouting infected node packets to analysis sinkhole.")
+
+    def trigger_dynamic_quarantine(self):
+        """Isolates affected zones via micro-segmentation."""
+        self._emit_telemetry("[QUARANTINE] Micro-segmentation applied. Isolating outbreak zones.")
+
+    def execute_selected_countermeasure(self):
+        """Dispatches the selected countermeasure from the dropdown."""
+        selection = self.countermeasure_var.get()
+        
+        if selection == "Federal Intervention":
+            self.trigger_federal_intervention()
+        elif selection == "Zero-Trust Reset":
+            self.trigger_zero_trust_reset()
+        elif selection == "Sinkhole Routing":
+            self.trigger_sinkhole_routing()
+        elif selection == "Dynamic Quarantine":
+            self.trigger_dynamic_quarantine()
+        else:
+            self._emit_telemetry("[WARNING] Please select a valid countermeasure from the dropdown.")
+
+    def log_telemetry(self, msg: str):
+        """Appends telemetry messages directly to the UI log panel and terminal."""
+        print(msg)
+        # Check for standard UI log textboxes or scrolling widgets
+        for widget_name in ("telemetry_box", "log_box", "telemetry_text", "log_text", "console_box", "output_box"):
+            widget = getattr(self, widget_name, None)
+            if widget is not None and hasattr(widget, "insert"):
+                try:
+                    prev_state = widget.cget("state")
+                    if prev_state == "disabled":
+                        widget.configure(state="normal")
+                    widget.insert("end", f"{msg}\n")
+                    widget.see("end")
+                    if prev_state == "disabled":
+                        widget.configure(state="disabled")
+                    return
+                except Exception as e:
+                    print(f"[UI LOG ERROR] {e}")
     # ------------------------------------------------------------------
     # Assistant Toggle
     # ------------------------------------------------------------------
@@ -264,7 +359,28 @@ class SimulatorApp(ctk.CTk):
             command=self._on_level_change,
         )
         self.level_menu.grid(row=0, column=1, padx=5, pady=5)
+        self.countermeasure_dropdown = ctk.CTkOptionMenu(
+            top_ctrl,
+            values=[
+                "Federal Intervention", 
+                "Zero-Trust Reset", 
+                "Sinkhole Routing", 
+                "Dynamic Quarantine"
+            ],
+            variable=self.countermeasure_var,
+            width=170
+        )
+        self.countermeasure_dropdown.grid(row=1, column=2, padx=5, pady=5)
 
+        self.btn_execute_countermeasure = ctk.CTkButton(
+            top_ctrl,
+            text="Execute",
+            width=80,
+            fg_color="#1f538d",
+            hover_color="#14375e",
+            command=self.execute_selected_countermeasure
+        )
+        self.btn_execute_countermeasure.grid(row=1, column=3, padx=5, pady=5)
         ToolTip(
             self.level_menu,
             "Select a predefined network topology or start with a blank canvas.",
