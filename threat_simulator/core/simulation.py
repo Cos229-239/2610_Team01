@@ -245,6 +245,8 @@ class SimulationEngine:
     def trigger_gerald_manual(self, graph: NetworkGraph) -> List[str]:
         events = []
         firewalls_found = False
+        edges_to_remove = []
+        edges_to_add = []
 
         for edge in graph.edges:
             if edge.is_firewall and getattr(edge, "status", "") != "BREACHED":
@@ -260,10 +262,23 @@ class SimulationEngine:
                 events.append(f"Gerald: Manual hash crack burst on Edge ({int(edge.crack_progress * 100)}%)")
 
                 if edge.crack_progress >= 1.0:
-                    edge.is_firewall = False
-                    edge.status = "BREACHED"
-                    edge.breached_from_lock = True
-                    events.append(f"Gerald: Edge completely breached and password cracked!")
+                    edges_to_remove.append(edge)
+                    
+                    new_breached_edge = deepcopy(edge)
+                    new_breached_edge.is_firewall = False  # Ensures UI badge disappears immediately
+                    new_breached_edge.status = "BREACHED"
+                    new_breached_edge.breached_from_lock = True
+                    new_breached_edge.crack_progress = 1.0
+                    edges_to_add.append(new_breached_edge)
+
+                    events.append(f"Gerald: Firewall completely cracked — edge converted to red breached line!")
+
+        for edge in edges_to_remove:
+            if edge in graph.edges:
+                graph.edges.remove(edge)
+
+        for edge in edges_to_add:
+            graph.edges.append(edge)
 
         if not firewalls_found:
             events.append("Gerald: No active firewall-locked edges remaining in topology.")
@@ -336,6 +351,8 @@ class SimulationEngine:
             currently_infected.add(p0_idx)
 
         # Progress active edge cracking attempts automatically per tick (ONLY IF is_firewall is True)
+        edges_to_remove = []
+        edges_to_add = []
         for edge in graph.edges:
             if getattr(edge, "is_firewall", False) and getattr(edge, "status", "") != "BREACHED":
                 req_attempts = getattr(edge, "required_attempts", 10000)
@@ -347,12 +364,25 @@ class SimulationEngine:
                 edge.crack_progress = min(1.0, edge.crack_attempts / max(1, req_attempts))
 
                 if edge.crack_progress >= 1.0:
-                    edge.is_firewall = False
-                    edge.status = "BREACHED"
-                    edge.breached_from_lock = True
+                    edges_to_remove.append(edge)
+                    
+                    new_breached_edge = deepcopy(edge)
+                    new_breached_edge.is_firewall = False  # Drops the password card/badge display
+                    new_breached_edge.status = "BREACHED"  # Turns it into the red breached line style
+                    new_breached_edge.breached_from_lock = True
+                    new_breached_edge.crack_progress = 1.0
+                    edges_to_add.append(new_breached_edge)
+
                     u_id = getattr(graph.nodes[edge.u], 'id', f"Node-{edge.u}")
                     v_id = getattr(graph.nodes[edge.v], 'id', f"Node-{edge.v}")
-                    step_events.append(f"⚡ Threat AI: Edge link between {u_id} and {v_id} successfully breached!")
+                    step_events.append(f"⚡ Threat AI: Firewall breached between {u_id} and {v_id} — card removed and converted to a red breached line.")
+
+        for edge in edges_to_remove:
+            if edge in graph.edges:
+                graph.edges.remove(edge)
+
+        for edge in edges_to_add:
+            graph.edges.append(edge)
 
         # -------------------------------------------------------------
         # DYNAMIC THREAT ESCALATION MULTIPLIER

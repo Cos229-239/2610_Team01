@@ -321,7 +321,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                 )
 
         if "show ip interface" in command.lower():
-            return "Interface                     IP-Address      OK? Method Status                  Protocol\nFastEthernet0/0             192.168.1.1     YES manual up                     up"
+            return "Interface                     IP-Address     OK? Method Status                     Protocol\nFastEthernet0/0             192.168.1.1     YES manual up                       up"
 
         if "show ip route" in command.lower():
             return "Codes: C - connected, s - static, R - RIP\n\nGateway of last resort is not set\n\nC    192.168.1.0/24 is directly connected, FastEthernet0/0"
@@ -720,8 +720,8 @@ class NetworkCanvas(ctk.CTkCanvas):
                     self.create_rectangle(bx1, by1, bx2, by2, fill="#E65100", outline="#FFFFFF", width=1)
                     self.create_text(mid_sx, mid_sy, text="UNLOCK", fill="#FFFFFF", font=("Consolas", max(6, int(7 * zf)), "bold"))
 
-                # B. Active Firewall or Cracking Progress
-                elif is_firewall or crack_progress > 0.0:
+                # B. Active Firewall or Cracking Progress (Only while not fully cracked)
+                elif (is_firewall or crack_progress > 0.0) and crack_progress < 1.0:
                     self.create_line(
                         s1_x, s1_y, s2_x, s2_y,
                         fill="#00E5FF",
