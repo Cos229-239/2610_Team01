@@ -215,7 +215,7 @@ class SimulatorApp(ctk.CTk):
             if hasattr(self.sim_engine, "deploy_federal_intervention"):
                 response = self.sim_engine.deploy_federal_intervention(defense_val, active_count)
             else:
-                response = sim_engine.deploy_federal_intervention(defense_val, active_count)
+                response = self.sim_engine.deploy_federal_intervention(defense_val, active_count)
 
             msg = response["message"] if isinstance(response, dict) and "message" in response else str(response)
             self._emit_telemetry(f"[FEDERAL] {msg}")

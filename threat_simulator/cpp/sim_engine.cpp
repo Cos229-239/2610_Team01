@@ -1,33 +1,32 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <string>
-#include <algorithm>
 
 namespace py = pybind11;
 
-py::dict run_step_telemetry(int step_count, float infection_rate, float defense_strength) {
-    py::dict metrics;
-    
-    int total_nodes = 100;
-    
-    int infected_nodes = std::min(total_nodes, static_cast<int>(step_count * infection_rate * 10));
-    int active_defenses = std::min(total_nodes, static_cast<int>(step_count * defense_strength * 5));
-    
-    float threat_level = (float)infected_nodes / total_nodes * 100.0f;
+class SimulationEngine {
+public:
+    float defense_power = 0.5f;
 
-    metrics["step"] = step_count;
-    metrics["total_nodes"] = total_nodes;
-    metrics["infected_nodes"] = infected_nodes;
-    metrics["active_defenses"] = active_defenses;
-    metrics["threat_level_pct"] = threat_level;
-    metrics["status"] = (threat_level > 75.0f) ? "CRITICAL OUTBREAK" : "CONTAINMENT ACTIVE";
+    SimulationEngine() {}
 
-    return metrics;
-}
+    py::dict deploy_federal_intervention(float defense_val, int active_count) {
+        defense_power = defense_val;
+        
+        py::dict metrics;
+        metrics["message"] = "Federal intervention successfully deployed. Network isolated across " + std::to_string(active_count) + " nodes.";
+        metrics["status"] = "SECURED";
+        metrics["defense_power"] = defense_power;
+        return metrics;
+    }
+};
 
 PYBIND11_MODULE(sim_engine, m) {
-    m.doc() = "C++ High-Performance Simulation Engine";
-    m.def("run_step_telemetry", &run_step_telemetry, 
-          "Executes step and returns structured telemetry data based on dynamic inputs", 
-          py::arg("step_count"), py::arg("infection_rate"), py::arg("defense_strength"));
+    m.doc() = "C++ Simulation Engine Backend for Threat Simulator";
+
+    py::class_<SimulationEngine>(m, "SimulationEngine")
+        .def(py::init<>())
+        .def_readwrite("defense_power", &SimulationEngine::defense_power)
+        .def("deploy_federal_intervention", &SimulationEngine::deploy_federal_intervention,
+             py::arg("defense_power"), py::arg("active_count"));
 }
