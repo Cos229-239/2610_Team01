@@ -2,11 +2,17 @@ import os
 import sys
 import json
 import tkinter as tk
-import pygame
 from tkinter import Menu
 from typing import Dict, List, Optional, Tuple
 
-# Add project root directory to sys.path to resolve internal modules
+try:
+    import pygame
+    HAS_PYGAME = True
+except ImportError:
+    pygame = None
+    HAS_PYGAME = False
+    print("[Warning] pygame not found – background music will be disabled.")
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
 if root_dir not in sys.path:
@@ -24,40 +30,35 @@ from ui.pdu_controls import PDUControlPanel
 from utils.theme_loader import ThemeManager
 from ui.documentation import DocumentationWindow
 
-# --- DEPENDENCY-FREE THEME AUDIO MANAGER ---
-import platform
-import subprocess
-import threading
-import time
-
 
 class SimulationThemeManager:
     def __init__(self, wav_name: str = "Midnight_Override.wav"):
-        # Check standard relative paths for the root assets folder
-        possible_paths = [
-            os.path.join("assets", wav_name),
-            os.path.join("..", "assets", wav_name),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", wav_name)),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", wav_name))
-        ]
-        
-        self.wav_path = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                self.wav_path = path
-                break
-                
         self.enabled = False
         self.volume = 0.7
         self.music_enabled = True
         self._initialized = False
+        self.wav_path = None
+
+        if not HAS_PYGAME:
+            print("[Theme Warning] pygame is not installed. Music disabled.")
+            return
+
+        possible_paths = [
+            os.path.join("assets", wav_name),
+            os.path.join("..", "assets", wav_name),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", wav_name)),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", wav_name)),
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                self.wav_path = path
+                break
 
         if self.wav_path is None:
             print(f"[Theme Warning] {wav_name} not found in any assets folder!")
             return
 
         try:
-            # Initialize only the mixer (no window needed)
             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
             pygame.mixer.music.load(self.wav_path)
             pygame.mixer.music.set_volume(self.volume)
@@ -69,20 +70,17 @@ class SimulationThemeManager:
             self.enabled = False
 
     def set_volume(self, volume: float):
-        """Set volume from 0.0 to 1.0 (real volume control)."""
         self.volume = max(0.0, min(1.0, float(volume)))
-
         if self._initialized:
             pygame.mixer.music.set_volume(self.volume)
-
         if self.volume <= 0.0 or not self.music_enabled:
             self.stop_theme()
         elif self.music_enabled:
             self.start_theme()
 
     def set_enabled(self, enabled: bool):
-        self.music_enabled = enabled
-        if enabled and self.volume > 0.0:
+        self.music_enabled = bool(enabled)
+        if self.music_enabled and self.volume > 0.0:
             self.start_theme()
         else:
             self.stop_theme()
@@ -92,10 +90,9 @@ class SimulationThemeManager:
             return
         if not self.music_enabled or self.volume <= 0.0:
             return
-
         try:
             if not pygame.mixer.music.get_busy():
-                pygame.mixer.music.play(loops=-1)  # infinite loop
+                pygame.mixer.music.play(loops=-1)
         except Exception as e:
             print(f"[Theme Error] Could not start music: {e}")
 
@@ -107,7 +104,6 @@ class SimulationThemeManager:
                 pass
 
     def cleanup(self):
-        """Call this when the application is closing."""
         self.stop_theme()
         if self._initialized:
             try:
@@ -118,13 +114,11 @@ class SimulationThemeManager:
 
 class SimulatorApp(ctk.CTk):
     def open_analytics_modal(self):
-        """Opens or brings focus to the live Matplotlib analytics telemetry modal."""
         from ui.analytics_modal import AnalyticsModal
         if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
             self.active_analytics_modal.lift()
             self.active_analytics_modal.focus_force()
             return
-
         self.active_analytics_modal = AnalyticsModal(self, self.sim_engine)
 
     def __init__(self):
@@ -138,9 +132,8 @@ class SimulatorApp(ctk.CTk):
         self.loop_job = None
         self.active_analytics_modal = None
         self.countermeasure_var = ctk.StringVar(value="Select Countermeasure...")
-        # Dynamic Theme Engine Manager
+
         self.theme_manager = ThemeManager()
-        
         theme_names = list(self.theme_manager.available_themes.keys())
         self.current_theme_name = theme_names[0] if theme_names else "Classic Beige"
 
@@ -151,93 +144,51 @@ class SimulatorApp(ctk.CTk):
             "active_theme": self.current_theme_name,
             "music_enabled": True,
             "music_volume": 0.7,
+            "what_happened_enabled": True,
         }
 
         self._build_ui()
         self._build_menu()
 
-        # --- INITIALIZE AND START THE SIMULATION THEME ---
         self.theme_manager_audio = SimulationThemeManager("Midnight_Override.wav")
         self.theme_manager_audio.set_volume(self.settings["music_volume"])
         self.theme_manager_audio.set_enabled(self.settings["music_enabled"])
 
-        # Initialize Desktop Interactive Assistant with live simulation context references
-        self.assistant = ClippyAssistant(
-            self, sim_engine=self.sim_engine, graph=self.graph
-        )
-
+        self.assistant = ClippyAssistant(self, sim_engine=self.sim_engine, graph=self.graph)
         self._on_level_change("Level 1: Ring Topology")
-        
         self.select_json_theme(self.current_theme_name)
-
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
-    # --- Countermeasure Handlers ---
+
+    # --- Countermeasures ---
     def _emit_telemetry(self, msg: str):
-        """Routes telemetry messages to both the terminal and the UI log panel."""
         print(msg)
-
-        # 1. Check if an existing helper method is already defined on self
-        for method_name in ("append_log", "log_message", "write_log", "add_log", "update_log"):
-            if hasattr(self, method_name) and callable(getattr(self, method_name)):
-                getattr(self, method_name)(msg)
-                return
-
-        # 2. Otherwise, find the CTkTextbox log widget directly and insert the text
-        for widget_name in ("telemetry_box", "log_box", "telemetry_text", "log_text", "console_box", "output_box"):
-            widget = getattr(self, widget_name, None)
-            if widget is not None and hasattr(widget, "insert"):
-                try:
-                    prev_state = widget.cget("state")
-                    if prev_state == "disabled":
-                        widget.configure(state="normal")
-                    widget.insert("end", f"{msg}\n")
-                    widget.see("end")
-                    if prev_state == "disabled":
-                        widget.configure(state="disabled")
-                    return
-                except Exception as e:
-                    print(f"[UI LOG ERROR] Could not write to {widget_name}: {e}")
+        if hasattr(self, "telemetry_panel") and self.telemetry_panel:
+            self.telemetry_panel.append_raw_event("COUNTERMEASURE", msg)
 
     def trigger_federal_intervention(self):
-        """Executes the federal countermeasure routine."""
         try:
-            # Safely grab defense power from whichever attribute exists
-            defense_val = getattr(self.sim_engine, "defense_power", 0.5)
-            for slider_name in ("defense_power_slider", "def_slider", "slider_defense"):
-                if hasattr(self, slider_name):
-                    defense_val = getattr(self, slider_name).get()
-                    break
-
-            # Safely count active nodes in the graph
+            defense_val = self.slider_def.get() if hasattr(self, "slider_def") else 0.5
             active_count = len(self.graph.nodes) if hasattr(self.graph, "nodes") else 1
-
-            # Call the C++ engine binding (checks both module-level and self.sim_engine)
             if hasattr(self.sim_engine, "deploy_federal_intervention"):
                 response = self.sim_engine.deploy_federal_intervention(defense_val, active_count)
+                msg = response["message"] if isinstance(response, dict) and "message" in response else str(response)
             else:
-                response = self.sim_engine.deploy_federal_intervention(defense_val, active_count)
-
-            msg = response["message"] if isinstance(response, dict) and "message" in response else str(response)
+                msg = f"Federal intervention simulated (defense={defense_val:.2f}, nodes={active_count})."
             self._emit_telemetry(f"[FEDERAL] {msg}")
         except Exception as e:
             self._emit_telemetry(f"[ERROR] Federal intervention failed: {e}")
 
     def trigger_zero_trust_reset(self):
-        """Resets compromised credentials and enforces zero-trust policies."""
         self._emit_telemetry("[ZERO-TRUST] Forcing credential rotation across active subnets.")
 
     def trigger_sinkhole_routing(self):
-        """Redirects malicious traffic to a secure internal sinkhole."""
         self._emit_telemetry("[SINKHOLE] Rerouting infected node packets to analysis sinkhole.")
 
     def trigger_dynamic_quarantine(self):
-        """Isolates affected zones via micro-segmentation."""
         self._emit_telemetry("[QUARANTINE] Micro-segmentation applied. Isolating outbreak zones.")
 
     def execute_selected_countermeasure(self):
-        """Dispatches the selected countermeasure from the dropdown."""
         selection = self.countermeasure_var.get()
-        
         if selection == "Federal Intervention":
             self.trigger_federal_intervention()
         elif selection == "Zero-Trust Reset":
@@ -249,69 +200,34 @@ class SimulatorApp(ctk.CTk):
         else:
             self._emit_telemetry("[WARNING] Please select a valid countermeasure from the dropdown.")
 
-    def log_telemetry(self, msg: str):
-        """Appends telemetry messages directly to the UI log panel and terminal."""
-        print(msg)
-        # Check for standard UI log textboxes or scrolling widgets
-        for widget_name in ("telemetry_box", "log_box", "telemetry_text", "log_text", "console_box", "output_box"):
-            widget = getattr(self, widget_name, None)
-            if widget is not None and hasattr(widget, "insert"):
-                try:
-                    prev_state = widget.cget("state")
-                    if prev_state == "disabled":
-                        widget.configure(state="normal")
-                    widget.insert("end", f"{msg}\n")
-                    widget.see("end")
-                    if prev_state == "disabled":
-                        widget.configure(state="disabled")
-                    return
-                except Exception as e:
-                    print(f"[UI LOG ERROR] {e}")
-    # ------------------------------------------------------------------
-    # Assistant Toggle
-    # ------------------------------------------------------------------
-
     def toggle_assistant(self):
-        """Toggles the floating desktop helper assistant."""
         if self.assistant.winfo_viewable():
             self.assistant.hide()
         else:
             self.assistant.show()
 
-    # ------------------------------------------------------------------
-    # Event Callbacks
-    # ------------------------------------------------------------------
-
     def _on_mode_change(self, mode_str: str):
-        """Callback for the segmented button (+ Node, + Edge, Move, Infect, Firewall)."""
         mode_map = {
-            "Move": "SELECT",
-            "+ Node": "ADD_NODE",
-            "+ Edge": "CONNECT_EDGE",
-            "Infect": "SET_ORIGIN",
-            "Firewall": "FIREWALL",
+            "Move": "SELECT", "+ Node": "ADD_NODE", "+ Edge": "CONNECT_EDGE",
+            "Infect": "SET_ORIGIN", "Firewall": "FIREWALL",
         }
         self.net_canvas.set_mode(mode_map.get(mode_str, "SELECT"))
 
     def _on_device_type_change(self, selected_type: str):
-        """Callback when choosing a device type from the Device dropdown."""
         self.net_canvas.set_active_node_type(selected_type)
         self.mode_selector.set("+ Node")
         self.net_canvas.set_mode("ADD_NODE")
 
     def _clear_canvas(self):
-        """Clears all nodes and edges from the canvas."""
         self.reset_sim()
         self.graph.clear()
         self.level_menu.set("Custom Canvas")
         self.net_canvas.render()
 
     def _on_level_change(self, selected_level: str):
-        """Handles scenario dropdown switching."""
         self.reset_sim()
         w = self.net_canvas.winfo_width() or 500
         h = self.net_canvas.winfo_height() or 400
-
         if "Ring" in selected_level:
             self.graph = TopologyGenerator.generate_ring(20)
             TopologyGenerator.apply_ring_layout(self.graph, w, h)
@@ -323,14 +239,9 @@ class SimulatorApp(ctk.CTk):
             TopologyGenerator.apply_ring_layout(self.graph, w, h)
         else:
             self.graph.clear()
-
         self.canvas_wrapper.set_graph(self.graph)
         if hasattr(self, "pdu_controls") and hasattr(self.graph, "pdu_engine"):
             self.pdu_controls.engine = self.graph.pdu_engine
-
-    # ------------------------------------------------------------------
-    # UI Layout Builder
-    # ------------------------------------------------------------------
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=3)
@@ -351,44 +262,33 @@ class SimulatorApp(ctk.CTk):
         self.level_menu = ctk.CTkOptionMenu(
             top_ctrl,
             values=[
-                "Level 1: Ring Topology",
-                "Level 2: Mesh Network",
-                "Level 3: Star Cluster",
-                "Custom Canvas",
+                "Level 1: Ring Topology", "Level 2: Mesh Network",
+                "Level 3: Star Cluster", "Custom Canvas",
             ],
             command=self._on_level_change,
         )
         self.level_menu.grid(row=0, column=1, padx=5, pady=5)
+        ToolTip(self.level_menu, "Select a predefined network topology or start with a blank canvas.")
+
         self.countermeasure_dropdown = ctk.CTkOptionMenu(
             top_ctrl,
             values=[
-                "Federal Intervention", 
-                "Zero-Trust Reset", 
-                "Sinkhole Routing", 
-                "Dynamic Quarantine"
+                "Federal Intervention", "Zero-Trust Reset",
+                "Sinkhole Routing", "Dynamic Quarantine",
             ],
             variable=self.countermeasure_var,
-            width=170
+            width=170,
         )
         self.countermeasure_dropdown.grid(row=1, column=2, padx=5, pady=5)
 
         self.btn_execute_countermeasure = ctk.CTkButton(
-            top_ctrl,
-            text="Execute",
-            width=80,
-            fg_color="#1f538d",
-            hover_color="#14375e",
-            command=self.execute_selected_countermeasure
+            top_ctrl, text="Execute", width=80, fg_color="#1f538d",
+            hover_color="#14375e", command=self.execute_selected_countermeasure,
         )
         self.btn_execute_countermeasure.grid(row=1, column=3, padx=5, pady=5)
-        ToolTip(
-            self.level_menu,
-            "Select a predefined network topology or start with a blank canvas.",
-        )
 
         self.mode_selector = ctk.CTkSegmentedButton(
-            top_ctrl,
-            values=["Move", "+ Node", "+ Edge", "Infect", "Firewall"],
+            top_ctrl, values=["Move", "+ Node", "+ Edge", "Infect", "Firewall"],
             command=self._on_mode_change,
         )
         self.mode_selector.set("Move")
@@ -398,137 +298,66 @@ class SimulatorApp(ctk.CTk):
             row=0, column=3, padx=(10, 2), pady=5
         )
         self.device_menu = ctk.CTkOptionMenu(
-            top_ctrl,
-            values=["PC", "Router", "Modem", "Server", "Switch", "Firewall"],
-            width=90,
-            command=self._on_device_type_change,
+            top_ctrl, values=["PC", "Router", "Modem", "Server", "Switch", "Firewall"],
+            width=90, command=self._on_device_type_change,
         )
         self.device_menu.grid(row=0, column=4, padx=5, pady=5)
-
-        ToolTip(
-            self.device_menu,
-            "Choose what device type will be placed when adding nodes.",
-        )
 
         ctk.CTkLabel(top_ctrl, text="AI Mode:", font=("Arial", 11)).grid(
             row=0, column=5, padx=(10, 2), pady=5
         )
         self.ai_mode_menu = ctk.CTkOptionMenu(
-            top_ctrl,
-            values=["Strategic AI", "Uniform"],
-            width=110,
+            top_ctrl, values=["Strategic AI", "Uniform"], width=110
         )
         self.ai_mode_menu.grid(row=0, column=6, padx=5, pady=5)
 
-        ToolTip(
-            self.ai_mode_menu,
-            "Strategic AI targets the most effective paths. Uniform AI spreads randomly.",
-        )
-
-        ctk.CTkButton(
-            top_ctrl,
-            text="Clear",
-            width=60,
-            fg_color="#C62828",
-            command=self._clear_canvas,
-        ).grid(row=0, column=7, padx=5, pady=5)
-
-        ctk.CTkButton(
-            top_ctrl,
-            text="Settings",
-            width=70,
-            command=self.open_settings,
-        ).grid(row=0, column=8, padx=5, pady=5)
+        ctk.CTkButton(top_ctrl, text="Clear", width=60, fg_color="#C62828",
+                      command=self._clear_canvas).grid(row=0, column=7, padx=5, pady=5)
+        ctk.CTkButton(top_ctrl, text="Settings", width=70,
+                      command=self.open_settings).grid(row=0, column=8, padx=5, pady=5)
 
         self.btn_analytics = ctk.CTkButton(
-            top_ctrl,
-            text="📊 Analytics",
-            width=85,
-            fg_color="#00838F",
-            hover_color="#006064",
-            command=self.open_analytics_modal,
+            top_ctrl, text="📊 Analytics", width=85, fg_color="#00838F",
+            hover_color="#006064", command=self.open_analytics_modal,
         )
         self.btn_analytics.grid(row=0, column=9, padx=5, pady=5)
-        ToolTip(self.btn_analytics, "Open live simulation telemetry analytics and outbreak graphs.")
 
         self.btn_assistant = ctk.CTkButton(
-            top_ctrl,
-            text="📎 Help",
-            width=65,
-            fg_color="#1E88E5",
-            hover_color="#1565C0",
-            command=self.toggle_assistant,
+            top_ctrl, text="📎 Help", width=65, fg_color="#1E88E5",
+            hover_color="#1565C0", command=self.toggle_assistant,
         )
         self.btn_assistant.grid(row=0, column=10, padx=5, pady=5)
-
-        ToolTip(
-            self.btn_assistant,
-            "Open the interactive desktop assistant for guided instructions.",
-        )
 
         slider_frame = ctk.CTkFrame(left_frame)
         slider_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
-        ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(
-            row=0, column=0, padx=5, pady=5
-        )
-
+        ctk.CTkLabel(slider_frame, text="Infection Rate:").grid(row=0, column=0, padx=5, pady=5)
         self.inf_value_label = ctk.CTkLabel(slider_frame, text="0.3")
         self.inf_value_label.grid(row=1, column=0, padx=5)
-
         self.slider_inf = ctk.CTkSlider(
-            slider_frame,
-            from_=0.1,
-            to=1.0,
-            number_of_steps=9,
+            slider_frame, from_=0.1, to=1.0, number_of_steps=9,
             command=lambda v: self.inf_value_label.configure(text=f"{v:.1f}"),
         )
         self.slider_inf.set(0.3)
         self.slider_inf.grid(row=0, column=1, padx=5, pady=5)
 
-        ToolTip(
-            self.slider_inf,
-            "Controls how likely an infected node is to spread the outbreak.",
-        )
-
-        ctk.CTkLabel(slider_frame, text="Defense Power:").grid(
-            row=0, column=2, padx=5, pady=5
-        )
-
+        ctk.CTkLabel(slider_frame, text="Defense Power:").grid(row=0, column=2, padx=5, pady=5)
         self.def_value_label = ctk.CTkLabel(slider_frame, text="0.5")
         self.def_value_label.grid(row=1, column=2, padx=5)
-
         self.slider_def = ctk.CTkSlider(
-            slider_frame,
-            from_=0.1,
-            to=1.0,
-            number_of_steps=9,
+            slider_frame, from_=0.1, to=1.0, number_of_steps=9,
             command=lambda v: self.def_value_label.configure(text=f"{v:.1f}"),
         )
         self.slider_def.set(0.5)
         self.slider_def.grid(row=0, column=3, padx=5, pady=5)
 
-        ToolTip(
-            self.slider_def,
-            "Increase the network's ability to resist infection.",
-        )
-
         self.canvas_wrapper = CanvasView(left_frame, self.sim_engine)
         self.net_canvas = self.canvas_wrapper.canvas
-
         self.canvas_wrapper.set_node_select_callback(self.on_node_selected)
-
-        self.canvas_wrapper.grid(
-            row=2,
-            column=0,
-            padx=10,
-            pady=(10, 5),
-            sticky="nsew",
-        )
+        self.canvas_wrapper.grid(row=2, column=0, padx=10, pady=(10, 5), sticky="nsew")
 
         self.pdu_controls = PDUControlPanel(
-            parent=left_frame,
-            engine=getattr(self.graph, "pdu_engine", None),
+            parent=left_frame, engine=getattr(self.graph, "pdu_engine", None),
             on_tick_callback=self.net_canvas.render,
         )
         self.pdu_controls.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
@@ -537,97 +366,53 @@ class SimulatorApp(ctk.CTk):
         btn_frame.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
         btn_frame.grid_columnconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
 
-        self.play_button = ctk.CTkButton(
-            btn_frame,
-            text="Play",
-            fg_color="green",
-            command=self.play_sim,
-        )
+        self.play_button = ctk.CTkButton(btn_frame, text="Play", fg_color="green", command=self.play_sim)
         self.play_button.grid(row=0, column=0, padx=2, pady=5, sticky="ew")
-        ToolTip(self.play_button, "Start the simulation.")
-
-        ctk.CTkButton(
-            btn_frame, text="Pause", fg_color="red", command=self.pause_sim
-        ).grid(row=0, column=1, padx=2, pady=5, sticky="ew")
-
-        ctk.CTkButton(
-            btn_frame, text="Reset", command=self.reset_sim
-        ).grid(row=0, column=2, padx=2, pady=5, sticky="ew")
-
+        ctk.CTkButton(btn_frame, text="Pause", fg_color="red", command=self.pause_sim).grid(
+            row=0, column=1, padx=2, pady=5, sticky="ew"
+        )
+        ctk.CTkButton(btn_frame, text="Reset", command=self.reset_sim).grid(
+            row=0, column=2, padx=2, pady=5, sticky="ew"
+        )
         self.msf_button = ctk.CTkButton(
-            btn_frame,
-            text="Run Metasploit",
-            fg_color="#D9534F",
-            hover_color="#C9302C",
+            btn_frame, text="Run Metasploit", fg_color="#D9534F", hover_color="#C9302C",
             command=self.on_click_metasploit,
         )
         self.msf_button.grid(row=0, column=3, padx=2, pady=5, sticky="ew")
-        ToolTip(
-            self.msf_button,
-            "Manually execute Metasploit lateral movement across infected nodes.",
-        )
-
         self.gerald_button = ctk.CTkButton(
-            btn_frame,
-            text="Run Gerald",
-            fg_color="#F0AD4E",
-            hover_color="#EC971F",
+            btn_frame, text="Run Gerald", fg_color="#F0AD4E", hover_color="#EC971F",
             command=self.on_click_gerald,
         )
         self.gerald_button.grid(row=0, column=4, padx=2, pady=5, sticky="ew")
-        ToolTip(
-            self.gerald_button,
-            "Manually execute Gerald password and hash cracking burst.",
-        )
-
         self.ddos_button = ctk.CTkButton(
-            btn_frame,
-            text="Run DDoS",
-            fg_color="#9C27B0",
-            hover_color="#7B1FA2",
+            btn_frame, text="Run DDoS", fg_color="#9C27B0", hover_color="#7B1FA2",
             command=self.on_click_ddos,
         )
         self.ddos_button.grid(row=0, column=5, padx=2, pady=5, sticky="ew")
-        ToolTip(
-            self.ddos_button,
-            "Execute a volumetric DDoS flood against the selected node.",
-        )
-
         self.nuke_button = ctk.CTkButton(
-            btn_frame,
-            text="☢ NUKE",
-            fg_color="#B71C1C",
-            hover_color="#880E4F",
-            font=("Arial", 12, "bold"),
-            command=self.on_click_nuke
+            btn_frame, text="☢ NUKE", fg_color="#B71C1C", hover_color="#880E4F",
+            font=("Arial", 12, "bold"), command=self.on_click_nuke,
         )
         self.nuke_button.grid(row=0, column=6, padx=2, pady=5, sticky="ew")
-        ToolTip(self.nuke_button, "Execute all threat modules simultaneously with a countdown.")
 
         self.telemetry_panel = TelemetryPanel(self)
         self.telemetry_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-
-    # ------------------------------------------------------------------
-    # Dynamic Theme Integration
-    # ------------------------------------------------------------------
+        self.telemetry_panel.set_what_happened_visible(
+            self.settings.get("what_happened_enabled", True)
+        )
 
     def select_json_theme(self, theme_name: str):
-        """Applies chosen JSON theme data to the canvas view and assistant UI."""
         self.current_theme_name = theme_name
         self.settings["active_theme"] = theme_name
         theme_data = self.theme_manager.get_theme(theme_name)
-
         if "appearance_mode" in theme_data:
             ctk.set_appearance_mode(theme_data["appearance_mode"])
-            self.settings["dark_mode"] = (theme_data["appearance_mode"] == "Dark")
-
+            self.settings["dark_mode"] = theme_data["appearance_mode"] == "Dark"
         self.net_canvas.apply_custom_theme(theme_data)
-
         if hasattr(self, "assistant") and self.assistant:
             self.assistant.apply_theme(theme_data)
 
     def reload_themes(self, dropdown_menu=None):
-        """Rescans themes directory and refreshes dropdown options."""
         self.theme_manager.load_all_themes()
         theme_list = list(self.theme_manager.available_themes.keys())
         if dropdown_menu and dropdown_menu.winfo_exists():
@@ -639,94 +424,57 @@ class SimulatorApp(ctk.CTk):
                 dropdown_menu.set(self.current_theme_name)
                 self.select_json_theme(self.current_theme_name)
 
-    # ------------------------------------------------------------------
-    # Manual Threat Module Handlers
-    # ------------------------------------------------------------------
-
     def on_click_metasploit(self):
-        """Manually trigger Metasploit action on the targeted node and log to telemetry panel."""
         if hasattr(self, "sim_engine") and hasattr(self, "graph"):
             target_idx = getattr(self.net_canvas, "selected_node_idx", 0) or 0
-            events = self.sim_engine.trigger_metasploit_manual(
-                self.graph, target_node_idx=target_idx
-            )
-
-            infected_cnt = sum(
-                1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero
-            )
+            events = self.sim_engine.trigger_metasploit_manual(self.graph, target_node_idx=target_idx)
+            infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
             telemetry = TelemetryData(
-                step=self.sim_engine.step_counter,
-                status="MANUAL METASPLOIT TRIGGER",
-                infected_nodes=infected_cnt,
-                recovered_nodes=self.sim_engine.total_recovered_count,
-                total_nodes=self.graph.node_count,
-                active_defenses=int(self.slider_def.get() * 10),
+                step=self.sim_engine.step_counter, status="MANUAL METASPLOIT TRIGGER",
+                infected_nodes=infected_cnt, recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count, active_defenses=int(self.slider_def.get() * 10),
                 threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
-                escalation_factor=1.0,
-                sim_time_seconds=self.sim_engine.step_counter,
-                events=events,
+                escalation_factor=1.0, sim_time_seconds=self.sim_engine.step_counter, events=events,
             )
             self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
-
             if hasattr(self.net_canvas, "flash_target_node"):
                 self.net_canvas.flash_target_node(target_idx)
             else:
                 self.net_canvas.render()
 
     def on_click_gerald(self):
-        """Manually trigger Gerald password cracking and log to telemetry panel."""
         if hasattr(self, "sim_engine") and hasattr(self, "graph"):
             events = self.sim_engine.trigger_gerald_manual(self.graph)
-            infected_cnt = sum(
-                1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero
-            )
+            infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
             telemetry = TelemetryData(
-                step=self.sim_engine.step_counter,
-                status="MANUAL GERALD CRACK",
-                infected_nodes=infected_cnt,
-                recovered_nodes=self.sim_engine.total_recovered_count,
-                total_nodes=self.graph.node_count,
-                active_defenses=int(self.slider_def.get() * 10),
+                step=self.sim_engine.step_counter, status="MANUAL GERALD CRACK",
+                infected_nodes=infected_cnt, recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count, active_defenses=int(self.slider_def.get() * 10),
                 threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
-                escalation_factor=1.0,
-                sim_time_seconds=self.sim_engine.step_counter,
-                events=events,
+                escalation_factor=1.0, sim_time_seconds=self.sim_engine.step_counter, events=events,
             )
             self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
             self.net_canvas.render()
 
     def on_click_ddos(self):
-        """Manually trigger a DDoS flood on the targeted node and log to telemetry panel."""
         if hasattr(self, "sim_engine") and hasattr(self, "graph"):
             target_idx = getattr(self.net_canvas, "selected_node_idx", 0) or 0
-            events = self.sim_engine.trigger_ddos_manual(
-                self.graph, target_node_idx=target_idx
-            )
-
-            infected_cnt = sum(
-                1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero
-            )
+            events = self.sim_engine.trigger_ddos_manual(self.graph, target_node_idx=target_idx)
+            infected_cnt = sum(1 for n in self.graph.nodes if n.status == "INFECTED" or n.is_patient_zero)
             telemetry = TelemetryData(
-                step=self.sim_engine.step_counter,
-                status="VOLUMETRIC DDOS ATTACK",
-                infected_nodes=infected_cnt,
-                recovered_nodes=self.sim_engine.total_recovered_count,
-                total_nodes=self.graph.node_count,
-                active_defenses=int(self.slider_def.get() * 10),
+                step=self.sim_engine.step_counter, status="VOLUMETRIC DDOS ATTACK",
+                infected_nodes=infected_cnt, recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count, active_defenses=int(self.slider_def.get() * 10),
                 threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
-                escalation_factor=1.0,
-                sim_time_seconds=self.sim_engine.step_counter,
-                events=events,
+                escalation_factor=1.0, sim_time_seconds=self.sim_engine.step_counter, events=events,
             )
             self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
-
             if hasattr(self.net_canvas, "flash_target_node"):
                 self.net_canvas.flash_target_node(target_idx)
             else:
                 self.net_canvas.render()
 
     def on_click_nuke(self):
-        """Displays a dramatic countdown modal before launching the Nuke Protocol."""
         nuke_dialog = ctk.CTkToplevel(self)
         nuke_dialog.title("⚠️ NUKE PROTOCOL INITIATED")
         nuke_dialog.geometry("380x240")
@@ -735,33 +483,22 @@ class SimulatorApp(ctk.CTk):
         nuke_dialog.grab_set()
         nuke_dialog.focus_force()
 
-        ctk.CTkLabel(
-            nuke_dialog,
-            text="☢ FULL NUKE SALVO ☢",
-            font=("Arial", 18, "bold"),
-            text_color="#FF1744",
-        ).pack(pady=(20, 5))
-
+        ctk.CTkLabel(nuke_dialog, text="☢ FULL NUKE SALVO ☢", font=("Arial", 18, "bold"),
+                     text_color="#FF1744").pack(pady=(20, 5))
         ctk.CTkLabel(
             nuke_dialog,
             text="Initiating simultaneous attack sequence across all threat modules:\nMetasploit • Gerald • DDoS • Logic Bomb",
-            font=("Arial", 11),
-            justify="center",
-            wraplength=340,
+            font=("Arial", 11), justify="center", wraplength=340,
         ).pack(pady=5)
 
         self.countdown_seconds = 3
         countdown_label = ctk.CTkLabel(
-            nuke_dialog,
-            text=f"DETONATION IN: {self.countdown_seconds}",
-            font=("Consolas", 20, "bold"),
-            text_color="#FF1744",
+            nuke_dialog, text=f"DETONATION IN: {self.countdown_seconds}",
+            font=("Consolas", 20, "bold"), text_color="#FF1744",
         )
         countdown_label.pack(pady=10)
-
         modal_btn_frame = ctk.CTkFrame(nuke_dialog, fg_color="transparent")
         modal_btn_frame.pack(pady=10)
-
         self.nuke_timer_job = None
 
         def abort_nuke():
@@ -769,36 +506,27 @@ class SimulatorApp(ctk.CTk):
                 self.after_cancel(self.nuke_timer_job)
                 self.nuke_timer_job = None
             nuke_dialog.destroy()
-            if hasattr(self, 'telemetry_panel'):
-                self.telemetry_panel.append_raw_event("SYSTEM", "[ABORT] Nuke Protocol canceled by operator.")
+            self.telemetry_panel.append_raw_event("SYSTEM", "[ABORT] Nuke Protocol canceled by operator.")
 
         def execute_salvo():
             if self.nuke_timer_job:
                 self.after_cancel(self.nuke_timer_job)
                 self.nuke_timer_job = None
             nuke_dialog.destroy()
-            
-            if hasattr(self, 'sim_engine') and hasattr(self, 'graph'):
-                events = getattr(self.sim_engine, "trigger_nuke_all", lambda g: ["Nuke salvo triggered."])(self.graph)
-                infected_cnt = sum(
-                    1 for n in self.graph.nodes 
-                    if getattr(n, 'status', '') == "INFECTED" or getattr(n, 'is_patient_zero', False)
-                )
-                
-                telemetry = TelemetryData(
-                    step=self.sim_engine.step_counter,
-                    status="CRITICAL: FULL NUKE SALVO EXECUTED",
-                    infected_nodes=infected_cnt,
-                    recovered_nodes=self.sim_engine.total_recovered_count,
-                    total_nodes=self.graph.node_count,
-                    active_defenses=int(self.slider_def.get() * 10),
-                    threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
-                    escalation_factor=100.0,
-                    sim_time_seconds=self.sim_engine.step_counter,
-                    events=events
-                )
-                self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
-                self.net_canvas.render()
+            events = getattr(self.sim_engine, "trigger_nuke_all", lambda g: ["Nuke salvo triggered."])(self.graph)
+            infected_cnt = sum(
+                1 for n in self.graph.nodes
+                if getattr(n, "status", "") == "INFECTED" or getattr(n, "is_patient_zero", False)
+            )
+            telemetry = TelemetryData(
+                step=self.sim_engine.step_counter, status="CRITICAL: FULL NUKE SALVO EXECUTED",
+                infected_nodes=infected_cnt, recovered_nodes=self.sim_engine.total_recovered_count,
+                total_nodes=self.graph.node_count, active_defenses=int(self.slider_def.get() * 10),
+                threat_level_pct=(infected_cnt / max(1, self.graph.node_count)) * 100.0,
+                escalation_factor=100.0, sim_time_seconds=self.sim_engine.step_counter, events=events,
+            )
+            self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
+            self.net_canvas.render()
 
         def update_timer():
             if self.countdown_seconds > 1:
@@ -808,19 +536,11 @@ class SimulatorApp(ctk.CTk):
             else:
                 execute_salvo()
 
-        ctk.CTkButton(
-            modal_btn_frame, text="ABORT", fg_color="#D32F2F", hover_color="#9A0007", width=110, command=abort_nuke
-        ).pack(side="left", padx=10)
-
-        ctk.CTkButton(
-            modal_btn_frame, text="BYPASS (FIRE NOW)", fg_color="#FF6F00", hover_color="#C43E00", width=130, command=execute_salvo
-        ).pack(side="left", padx=10)
-
+        ctk.CTkButton(modal_btn_frame, text="ABORT", fg_color="#D32F2F", hover_color="#9A0007",
+                      width=110, command=abort_nuke).pack(side="left", padx=10)
+        ctk.CTkButton(modal_btn_frame, text="BYPASS (FIRE NOW)", fg_color="#FF6F00",
+                      hover_color="#C43E00", width=130, command=execute_salvo).pack(side="left", padx=10)
         self.nuke_timer_job = self.after(1000, update_timer)
-
-    # ------------------------------------------------------------------
-    # Menu & Dialogs
-    # ------------------------------------------------------------------
 
     def _build_menu(self):
         menubar = Menu(self)
@@ -830,9 +550,7 @@ class SimulatorApp(ctk.CTk):
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Clear Canvas", command=self._clear_canvas)
         file_menu.add_separator()
-        file_menu.add_command(
-            label="Export Simulation Report", command=self.canvas_wrapper.trigger_export
-        )
+        file_menu.add_command(label="Export Simulation Report", command=self.canvas_wrapper.trigger_export)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.destroy)
 
@@ -842,11 +560,9 @@ class SimulatorApp(ctk.CTk):
 
         view_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="View", menu=view_menu)
-
         self.colorblind_var = tk.BooleanVar(value=self.settings["colorblind_mode"])
         view_menu.add_checkbutton(
-            label="Colorblind Mode",
-            variable=self.colorblind_var,
+            label="Colorblind Mode", variable=self.colorblind_var,
             command=lambda: self.toggle_colorblind(self.colorblind_var.get()),
         )
 
@@ -859,6 +575,7 @@ class SimulatorApp(ctk.CTk):
         help_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Documentation", command=self.open_documentation)
+        help_menu.add_command(label="Glossary", command=lambda: self.open_documentation("Glossary"))
         help_menu.add_command(label="About", command=self._show_about)
 
     def _show_about(self):
@@ -869,88 +586,65 @@ class SimulatorApp(ctk.CTk):
         about.transient(self)
         about.grab_set()
         about.lift()
+        ctk.CTkLabel(about, text="Adaptive AI Outbreak & Threat Simulator",
+                     font=("Arial", 14, "bold")).pack(pady=(25, 8))
+        ctk.CTkLabel(about, text="A network infection simulation tool\nwith AI-driven spread models.",
+                     justify="center").pack(pady=5)
+        ctk.CTkButton(about, text="Close", width=100, command=about.destroy).pack(pady=15)
 
-        ctk.CTkLabel(
-            about,
-            text="Adaptive AI Outbreak & Threat Simulator",
-            font=("Arial", 14, "bold"),
-        ).pack(pady=(25, 8))
-
-        ctk.CTkLabel(
-            about,
-            text="A network infection simulation tool\nwith AI-driven spread models.",
-            justify="center",
-        ).pack(pady=5)
-
-        ctk.CTkButton(about, text="Close", width=100, command=about.destroy).pack(
-            pady=15
-        )
-
-    def open_documentation(self):
-        """Opens the in-app documentation window."""
-        DocumentationWindow(self)
+    def open_documentation(self, topic: str = None):
+        win = DocumentationWindow(self)
+        if topic:
+            win.show_topic(topic)
 
     def on_node_selected(self, node_index: int):
         if 0 <= node_index < len(self.graph.nodes):
-            node = self.graph.nodes[node_index]
-            self.telemetry_panel.show_node_info(node, self.graph)
-
-    # ------------------------------------------------------------------
-    # Settings Window with Dynamic JSON Theme Selector
-    # ------------------------------------------------------------------
+            self.telemetry_panel.show_node_info(self.graph.nodes[node_index], self.graph)
 
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings")
-        settings_window.geometry("380x360")
+        settings_window.geometry("380x420")
         settings_window.resizable(False, False)
         settings_window.transient(self)
         settings_window.grab_set()
         settings_window.focus_force()
         settings_window.lift()
-        settings_window.after(10, settings_window.lift)
 
-        # ---------- Theme section ----------
-        ctk.CTkLabel(
-            settings_window, text="UI Theme Palette:", font=("Arial", 11, "bold")
-        ).pack(padx=20, pady=(15, 2), anchor="w")
-
+        ctk.CTkLabel(settings_window, text="UI Theme Palette:", font=("Arial", 11, "bold")).pack(
+            padx=20, pady=(15, 2), anchor="w"
+        )
         theme_row = ctk.CTkFrame(settings_window, fg_color="transparent")
         theme_row.pack(padx=20, pady=(0, 10), anchor="w", fill="x")
-
         theme_list = list(self.theme_manager.available_themes.keys())
-        theme_dropdown = ctk.CTkOptionMenu(
-            theme_row,
-            values=theme_list,
-            command=self.select_json_theme,
-        )
+        theme_dropdown = ctk.CTkOptionMenu(theme_row, values=theme_list, command=self.select_json_theme)
         if self.current_theme_name in theme_list:
             theme_dropdown.set(self.current_theme_name)
         theme_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(theme_row, text="🔄 Reload", width=85,
+                      command=lambda: self.reload_themes(theme_dropdown)).pack(side="right")
 
-        btn_reload = ctk.CTkButton(
-            theme_row,
-            text="🔄 Reload",
-            width=85,
-            command=lambda: self.reload_themes(theme_dropdown),
-        )
-        btn_reload.pack(side="right")
-        ToolTip(btn_reload, "Scan themes/ folder for newly added or edited JSON theme files.")
-
-        # ---------- Dark Mode ----------
         dark_var = ctk.BooleanVar(value=self.settings["dark_mode"])
         ctk.CTkCheckBox(
-            settings_window,
-            text="Dark Mode Override",
-            variable=dark_var,
+            settings_window, text="Dark Mode Override", variable=dark_var,
             command=lambda: self.toggle_dark_mode(dark_var.get()),
         ).pack(padx=20, pady=8, anchor="w")
 
-        # ---------- Music section ----------
-        ctk.CTkLabel(
-            settings_window, text="Music / Theme Audio:", font=("Arial", 11, "bold")
-        ).pack(padx=20, pady=(12, 4), anchor="w")
+        what_var = ctk.BooleanVar(value=self.settings.get("what_happened_enabled", True))
 
+        def on_what_toggle():
+            enabled = what_var.get()
+            self.settings["what_happened_enabled"] = enabled
+            self.telemetry_panel.set_what_happened_visible(enabled)
+
+        ctk.CTkCheckBox(
+            settings_window, text='Show "What just happened?" summary',
+            variable=what_var, command=on_what_toggle,
+        ).pack(padx=20, pady=8, anchor="w")
+
+        ctk.CTkLabel(settings_window, text="Music / Theme Audio:", font=("Arial", 11, "bold")).pack(
+            padx=20, pady=(12, 4), anchor="w"
+        )
         music_enabled_var = ctk.BooleanVar(value=self.settings.get("music_enabled", True))
 
         def on_music_toggle():
@@ -959,19 +653,16 @@ class SimulatorApp(ctk.CTk):
             self.theme_manager_audio.set_enabled(enabled)
 
         ctk.CTkCheckBox(
-            settings_window,
-            text="Enable Background Music",
-            variable=music_enabled_var,
-            command=on_music_toggle,
+            settings_window, text="Enable Background Music",
+            variable=music_enabled_var, command=on_music_toggle,
         ).pack(padx=20, pady=(0, 6), anchor="w")
 
-        # Volume row
         vol_frame = ctk.CTkFrame(settings_window, fg_color="transparent")
         vol_frame.pack(padx=20, pady=(0, 10), fill="x")
-
         ctk.CTkLabel(vol_frame, text="Volume:", width=60).pack(side="left")
-
-        volume_label = ctk.CTkLabel(vol_frame, text=f"{int(self.settings.get('music_volume', 0.7)*100)}%")
+        volume_label = ctk.CTkLabel(
+            vol_frame, text=f"{int(self.settings.get('music_volume', 0.7) * 100)}%"
+        )
         volume_label.pack(side="right", padx=(8, 0))
 
         def on_volume_change(value):
@@ -981,39 +672,21 @@ class SimulatorApp(ctk.CTk):
             self.theme_manager_audio.set_volume(vol)
 
         volume_slider = ctk.CTkSlider(
-            vol_frame,
-            from_=0.0,
-            to=1.0,
-            number_of_steps=20,
-            command=on_volume_change,
+            vol_frame, from_=0.0, to=1.0, number_of_steps=20, command=on_volume_change
         )
         volume_slider.set(self.settings.get("music_volume", 0.7))
         volume_slider.pack(side="left", fill="x", expand=True, padx=(8, 0))
 
-        ToolTip(volume_slider, "0% = mute, higher values play the theme music.")
-
     def toggle_dark_mode(self, enabled: bool):
         self.settings["dark_mode"] = enabled
-        if enabled:
-            ctk.set_appearance_mode("Dark")
-        else:
-            ctk.set_appearance_mode("Light")
+        ctk.set_appearance_mode("Dark" if enabled else "Light")
 
     def toggle_colorblind(self, enabled: bool):
-        """Enable or disable colorblind-friendly mode."""
         self.settings["colorblind_mode"] = enabled
-
-        # Tell the canvas to switch color palettes
         if hasattr(self, "canvas_wrapper"):
             self.canvas_wrapper.set_colorblind_mode(enabled)
-            
-
-    # ------------------------------------------------------------------
-    # Simulation Loop Controls
-    # ------------------------------------------------------------------
 
     def show_clippy_ransomware(self):
-        """Displays a bright red themed Clippy Ransomware pop-up Easter egg."""
         ransom = ctk.CTkToplevel(self)
         ransom.title("📎 CLIPPY SECURITY ALERT")
         ransom.geometry("420x260")
@@ -1021,50 +694,33 @@ class SimulatorApp(ctk.CTk):
         ransom.transient(self)
         ransom.grab_set()
         ransom.focus_force()
-        
         ransom.configure(fg_color="#1a0000")
-
         ctk.CTkLabel(
-            ransom,
-            text="📎 IT LOOKS LIKE YOU'RE BEING RANSOMED!",
-            font=("Arial", 14, "bold"),
-            text_color="#FF1744"
+            ransom, text="📎 IT LOOKS LIKE YOU'RE BEING RANSOMED!",
+            font=("Arial", 14, "bold"), text_color="#FF1744",
         ).pack(pady=(20, 10))
-
         msg = (
             "Your network topology pointers and node memory addresses "
             "have been encrypted by The Bay Harbor Butcher.\n\n"
             "To recover your simulation session, please transfer 5000 Dogecoin "
             "to Garret's wallet or click 'Pay Ransom' below."
         )
-
-        ctk.CTkLabel(
-            ransom, 
-            text=msg, 
-            font=("Arial", 11), 
-            text_color="#FFFFFF",
-            justify="center", 
-            wraplength=360
-        ).pack(pady=10)
-
+        ctk.CTkLabel(ransom, text=msg, font=("Arial", 11), text_color="#FFFFFF",
+                     justify="center", wraplength=360).pack(pady=10)
         btn_frame = ctk.CTkFrame(ransom, fg_color="transparent")
         btn_frame.pack(pady=15)
 
         def pay_ransom():
             ransom.destroy()
-            if hasattr(self, 'telemetry_panel'):
-                self.telemetry_panel.append_raw_event(
-                    "CLIPPY RANSOMWARE",
-                    "Payment processing failed: Invalid Dogecoin address. Session host forced to cry about it."
-                )
+            self.telemetry_panel.append_raw_event(
+                "CLIPPY RANSOMWARE",
+                "Payment processing failed: Invalid Dogecoin address. Session host forced to cry about it.",
+            )
 
-        ctk.CTkButton(
-            btn_frame, text="Pay Ransom (500 DOGE)", fg_color="#00C853", hover_color="#009624", width=160, command=pay_ransom
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame, text="Refuse", fg_color="#D32F2F", hover_color="#9A0007", width=100, command=ransom.destroy
-        ).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Pay Ransom (500 DOGE)", fg_color="#00C853",
+                      hover_color="#009624", width=160, command=pay_ransom).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Refuse", fg_color="#D32F2F", hover_color="#9A0007",
+                      width=100, command=ransom.destroy).pack(side="left", padx=5)
 
     def play_sim(self):
         if not self.is_running:
@@ -1078,36 +734,34 @@ class SimulatorApp(ctk.CTk):
             self.loop_job = None
 
     def reset_sim(self):
-        self.reset_click_count = getattr(self, 'reset_click_count', 0) + 1
+        self.reset_click_count = getattr(self, "reset_click_count", 0) + 1
         if self.reset_click_count == 3:
             self.reset_click_count = 0
             self.show_clippy_ransomware()
             return
-
         self.pause_sim()
-        
-        # 1. Reset simulation engine state
-        self.sim_engine.reset(self.graph)
-        
-        # 2. Clear telemetry logs and PDU packet animations
+        try:
+            self.sim_engine.reset(self.graph)
+        except TypeError:
+            if hasattr(self.sim_engine, "reset"):
+                self.sim_engine.reset()
         self.telemetry_panel.clear()
         if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
             self.graph.pdu_engine.active_pdus.clear()
-
-        # 3. Reset all nodes and edges back to initial healthy states
         p0_idx = self.graph.get_patient_zero_index() if self.graph.nodes else 0
         for i, node in enumerate(self.graph.nodes):
             node.status = "HEALTHY"
-            node.is_patient_zero = (i == p0_idx)
+            node.is_patient_zero = i == p0_idx
             if hasattr(node, "defense_boost"):
                 node.defense_boost = 0.0
-
         for edge in self.graph.edges:
             edge.status = "HEALTHY"
-            edge.crack_progress = 0.0
-            edge.crack_attempts = 0
-            edge.breached_from_lock = False
-
+            if hasattr(edge, "crack_progress"):
+                edge.crack_progress = 0.0
+            if hasattr(edge, "crack_attempts"):
+                edge.crack_attempts = 0
+            if hasattr(edge, "breached_from_lock"):
+                edge.breached_from_lock = False
         self.net_canvas.render()
 
     def step_back(self):
@@ -1146,28 +800,18 @@ class SimulatorApp(ctk.CTk):
     def run_loop(self):
         if not self.is_running:
             return
-
         telemetry = self.sim_engine.step(
-            self.graph,
-            self.slider_inf.get(),
-            self.slider_def.get(),
+            self.graph, self.slider_inf.get(), self.slider_def.get(),
             ai_mode=self.ai_mode_menu.get(),
         )
-
         if hasattr(self.graph, "pdu_engine") and self.graph.pdu_engine:
             self.graph.pdu_engine.update_packets()
-
         self.net_canvas.render()
         self.telemetry_panel.append_log(telemetry, self.sim_engine.history_index)
-
-        # --- LIVE UPDATE ANALYTICS WINDOW IF OPEN ---
         if self.active_analytics_modal is not None and self.active_analytics_modal.winfo_exists():
             self.active_analytics_modal.refresh()
-        # ---------------------------------------------
-
         total = telemetry.total_nodes
         infected = telemetry.infected_nodes
-
         if total > 0:
             if infected == 0:
                 self.pause_sim()
@@ -1177,8 +821,7 @@ class SimulatorApp(ctk.CTk):
                     is_victory=True,
                 )
                 return
-
-            elif infected == total:
+            if infected == total:
                 self.pause_sim()
                 self._show_endgame_dialog(
                     title="NETWORK COMPROMISED",
@@ -1186,7 +829,6 @@ class SimulatorApp(ctk.CTk):
                     is_victory=False,
                 )
                 return
-
         self.loop_job = self.after(1000, self.run_loop)
 
     def _show_endgame_dialog(self, title: str, message: str, is_victory: bool):
@@ -1196,36 +838,19 @@ class SimulatorApp(ctk.CTk):
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
-
         header_color = "#2E7D32" if is_victory else "#C62828"
-
-        ctk.CTkLabel(
-            dialog,
-            text=title,
-            font=("Arial", 18, "bold"),
-            text_color=header_color,
-        ).pack(pady=(20, 10))
-
-        ctk.CTkLabel(
-            dialog,
-            text=message,
-            font=("Arial", 12),
-            wraplength=360,
-            justify="center",
-        ).pack(pady=10)
-
-        ctk.CTkButton(
-            dialog,
-            text="Acknowledge",
-            fg_color=header_color,
-            width=120,
-            command=dialog.destroy,
-        ).pack(pady=(15, 10))
+        ctk.CTkLabel(dialog, text=title, font=("Arial", 18, "bold"),
+                     text_color=header_color).pack(pady=(20, 10))
+        ctk.CTkLabel(dialog, text=message, font=("Arial", 12),
+                     wraplength=360, justify="center").pack(pady=10)
+        ctk.CTkButton(dialog, text="Acknowledge", fg_color=header_color,
+                      width=120, command=dialog.destroy).pack(pady=(15, 10))
 
     def on_closing(self):
         if hasattr(self, "theme_manager_audio"):
             self.theme_manager_audio.cleanup()
         self.destroy()
+
 
 if __name__ == "__main__":
     app = SimulatorApp()
