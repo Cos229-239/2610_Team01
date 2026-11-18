@@ -1,8 +1,10 @@
 import os
 import sys
 import json
+import csv
 import tkinter as tk
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 
 # Add project root directory to sys.path to resolve 'utils'
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -991,10 +993,19 @@ class CanvasView(ctk.CTkFrame):
         self.canvas = NetworkCanvas(self)
         self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # Button container frame for exporters
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=10)
+
         self.export_button = ctk.CTkButton(
-            self, text="Export Simulation Report", command=self.trigger_export
+            btn_frame, text="Export JSON Report", command=self.trigger_export
         )
-        self.export_button.pack(pady=10)
+        self.export_button.pack(side="left", padx=5)
+
+        self.export_csv_button = ctk.CTkButton(
+            btn_frame, text="Export CSV Files", fg_color="#1F6AA5", command=self.trigger_csv_export
+        )
+        self.export_csv_button.pack(side="left", padx=5)
 
     @property
     def selected_node_idx(self) -> Optional[int]:
@@ -1048,6 +1059,84 @@ class CanvasView(ctk.CTkFrame):
 
         except Exception as e:
             print(f"Export failed: {e}")
+
+    def trigger_csv_export(self):
+        try:
+            graph = getattr(self.simulation, "graph", None) or getattr(
+                self.canvas, "graph", None
+            )
+            if not graph:
+                print("CSV Export failed: Active simulation graph not found.")
+                return
+
+            os.makedirs(os.path.join("reports", "csv"), exist_ok=True)
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            nodes_filepath = os.path.join("reports", "csv", f"network_nodes_{timestamp_str}.csv")
+            edges_filepath = os.path.join("reports", "csv", f"network_edges_{timestamp_str}.csv")
+
+            nodes_list = getattr(graph, "nodes", [])
+            edges_list = getattr(graph, "edges", [])
+
+            # 1. Export Nodes to CSV
+            with open(nodes_filepath, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Index", "ID", "Node_Type", "IP_Address", "Subnet", "Status", "Is_Patient_Zero", "X", "Y"])
+                for idx, node in enumerate(nodes_list):
+                    writer.writerow([
+                        idx,
+                        getattr(node, "id", f"Node-{idx}"),
+                        getattr(node, "node_type", "PC"),
+                        getattr(node, "ip_address", ""),
+                        getattr(node, "subnet", ""),
+                        getattr(node, "status", "HEALTHY"),
+                        getattr(node, "is_patient_zero", False),
+                        getattr(node, "x", 0.0),
+                        getattr(node, "y", 0.0)
+                    ])
+
+            # 2. Export Edges to CSV
+            with open(edges_filepath, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Source_Index", "Target_Index", "Status", "Is_Firewall", "Password", "Crack_Progress"])
+                for edge in edges_list:
+                    writer.writerow([
+                        getattr(edge, "u", 0),
+                        getattr(edge, "v", 0),
+                        getattr(edge, "status", "HEALTHY"),
+                        getattr(edge, "is_firewall", False),
+                        getattr(edge, "password", ""),
+                        getattr(edge, "crack_progress", 0.0)
+                    ])
+
+            abs_path = os.path.abspath(os.path.join("reports", "csv"))
+
+            popup = ctk.CTkToplevel(self)
+            popup.title("CSV Reports Exported")
+            popup.geometry("420x220")
+            popup.transient(self)
+            popup.grab_set()
+
+            ctk.CTkLabel(
+                popup,
+                text="CSV Export Successful!",
+                font=("Arial", 14, "bold"),
+                text_color="#2E7D32",
+            ).pack(pady=(20, 5))
+
+            ctk.CTkLabel(
+                popup,
+                text=f"Files saved in:\n{abs_path}",
+                font=("Arial", 10),
+                text_color="gray",
+                justify="center"
+            ).pack(pady=5)
+
+            ctk.CTkButton(popup, text="Close", command=popup.destroy).pack(
+                pady=(15, 15)
+            )
+
+        except Exception as e:
+            print(f"CSV Export failed: {e}")
 
     def render(self):
         self.canvas.render()

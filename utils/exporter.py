@@ -1,4 +1,5 @@
 import json
+import csv
 import os
 from datetime import datetime
 
@@ -42,10 +43,56 @@ def export_simulation_summary(graph, filename=None):
         
     filepath = os.path.join("reports", filename)
     
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(report_data, f, indent=4)
         
     return filepath
+
+
+def export_graph_to_csv(graph, output_dir="reports/csv") -> str:
+    """Exports network graph nodes and edges into separate CSV files."""
+    os.makedirs(output_dir, exist_ok=True)
+        
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nodes_filepath = os.path.join(output_dir, f"network_nodes_{timestamp}.csv")
+    edges_filepath = os.path.join(output_dir, f"network_edges_{timestamp}.csv")
+    
+    nodes_list = getattr(graph, "nodes", [])
+    edges_list = getattr(graph, "edges", [])
+    
+    # 1. Export Nodes
+    with open(nodes_filepath, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Index", "ID", "Node_Type", "IP_Address", "Subnet", "Status", "Is_Patient_Zero", "X", "Y"])
+        for idx, node in enumerate(nodes_list):
+            writer.writerow([
+                idx,
+                getattr(node, "id", f"Node-{idx}"),
+                getattr(node, "node_type", "PC"),
+                getattr(node, "ip_address", ""),
+                getattr(node, "subnet", ""),
+                getattr(node, "status", "HEALTHY"),
+                getattr(node, "is_patient_zero", False),
+                getattr(node, "x", 0.0),
+                getattr(node, "y", 0.0)
+            ])
+            
+    # 2. Export Edges
+    with open(edges_filepath, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Source_Index", "Target_Index", "Status", "Is_Firewall", "Password", "Crack_Progress"])
+        for edge in edges_list:
+            writer.writerow([
+                getattr(edge, "u", 0),
+                getattr(edge, "v", 0),
+                getattr(edge, "status", "HEALTHY"),
+                getattr(edge, "is_firewall", False),
+                getattr(edge, "password", ""),
+                getattr(edge, "crack_progress", 0.0)
+            ])
+            
+    return os.path.abspath(output_dir)
+
 
 # --- Quick Test Classes and Execution ---
 class MockNode:
@@ -54,21 +101,35 @@ class MockNode:
         self.status = status
         self.is_patient_zero = is_patient_zero
 
+class MockEdge:
+    def __init__(self, u, v, status="HEALTHY", is_firewall=False, password="", crack_progress=0.0):
+        self.u = u
+        self.v = v
+        self.status = status
+        self.is_firewall = is_firewall
+        self.password = password
+        self.crack_progress = crack_progress
+
 class MockGraph:
-    def __init__(self, nodes, manual_override_logs=None):
+    def __init__(self, nodes, edges=None, manual_override_logs=None):
         self.nodes = nodes
+        self.edges = edges or []
         self.manual_override_logs = manual_override_logs or []
 
 if __name__ == "__main__":
     try:
-        print("Starting test export with audit logs...")
+        print("Starting test export with audit logs and CSV...")
         test_nodes = [
-            MockNode(id=1, status="HEALTHY", is_patient_zero=False),
-            MockNode(id=2, status="INFECTED", is_patient_zero=True),
-            MockNode(id=3, status="HEALTHY", is_patient_zero=False)
+            MockNode(id="PC-1", status="HEALTHY", is_patient_zero=False),
+            MockNode(id="Server-1", status="INFECTED", is_patient_zero=True),
+            MockNode(id="Router-1", status="HEALTHY", is_patient_zero=False)
         ]
         
-        # Sample mock override log for testing export serialization
+        test_edges = [
+            MockEdge(u=0, v=1, status="INFECTED", is_firewall=False),
+            MockEdge(u=1, v=2, status="HEALTHY", is_firewall=True, password="abc", crack_progress=0.5)
+        ]
+        
         sample_logs = [
             {
                 "edge_index": 0,
@@ -79,9 +140,12 @@ if __name__ == "__main__":
             }
         ]
         
-        test_graph = MockGraph(nodes=test_nodes, manual_override_logs=sample_logs)
+        test_graph = MockGraph(nodes=test_nodes, edges=test_edges, manual_override_logs=sample_logs)
         
-        path = export_simulation_summary(test_graph)
-        print(f"SUCCESS! File created at absolute path: {os.path.abspath(path)}")
+        json_path = export_simulation_summary(test_graph)
+        csv_dir = export_graph_to_csv(test_graph)
+        
+        print(f"SUCCESS! JSON Report created at: {os.path.abspath(json_path)}")
+        print(f"SUCCESS! CSV Reports directory created at: {csv_dir}")
     except Exception as e:
         print(f"ERROR caught during export: {e}")
