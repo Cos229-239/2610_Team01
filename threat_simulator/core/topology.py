@@ -284,8 +284,6 @@ class TopologyGenerator:
 
         for i in range(num_nodes):
             graph.add_edge(i, (i + 1) % num_nodes)
-            if i % 3 == 0:
-                graph.add_edge(i, (i + 5) % num_nodes)
 
         return graph
 
