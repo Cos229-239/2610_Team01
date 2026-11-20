@@ -2,7 +2,7 @@ import math
 import random
 import string
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from .node_types import NODE_TYPES
 from .pdu_engine import PDUSimulationEngine
 
@@ -83,21 +83,117 @@ class NetworkGraph:
     def node_count(self) -> int:
         return len(self.nodes)
 
-    def _generate_unique_subnet_and_ip(self) -> Tuple[str, str]:
+    @staticmethod
+    def _subnet_prefix(subnet: str) -> str:
+        """Returns '192.168.10' from '192.168.10.0/24'."""
+        base_ip = subnet.split("/")[0].strip()
+        parts = base_ip.split(".")
+        if len(parts) == 4:
+            return f"{parts[0]}.{parts[1]}.{parts[2]}"
+        return "192.168.1"
+
+    def _allocate_next_subnet(self) -> str:
+        """Allocates the next unused /24 subnet based on base_network."""
+        used_subnets = {n.subnet for n in self.nodes if getattr(n, "subnet", "")}
         try:
             start_octet = int(self.base_network.split(".")[2])
         except (IndexError, ValueError):
             start_octet = 1
 
-        third = start_octet + self._next_subnet - 1
-        self._next_subnet += 1
+        for _ in range(254):
+            third = start_octet + self._next_subnet - 1
+            self._next_subnet += 1
+            if third > 254:
+                third = ((third - 1) % 254) + 1
+            candidate = f"192.168.{third}.0/24"
+            if candidate not in used_subnets:
+                return candidate
 
-        if third > 254:
-            third = ((third - 1) % 254) + 1
+        return f"192.168.{start_octet}.0/24"
 
-        subnet = f"192.168.{third}.0/24"
-        ip = f"192.168.{third}.10"
+    def _next_available_host_ip(
+        self, subnet: str, preferred_host: int = 10, exclude_node_idx: Optional[int] = None
+    ) -> str:
+        """Finds an unused host IP (.10-.250) within the given /24 subnet."""
+        prefix = self._subnet_prefix(subnet)
+        used_ips: Set[str] = set()
+        for idx, node in enumerate(self.nodes):
+            if exclude_node_idx is not None and idx == exclude_node_idx:
+                continue
+            if getattr(node, "ip_address", ""):
+                used_ips.add(node.ip_address.strip())
 
+        # Routers/gateways use .1; hosts start at preferred_host (default .10)
+        for host_octet in range(preferred_host, 251):
+            candidate_ip = f"{prefix}.{host_octet}"
+            if candidate_ip not in used_ips:
+                return candidate_ip
+
+        for host_octet in range(2, 251):
+            candidate_ip = f"{prefix}.{host_octet}"
+            if candidate_ip not in used_ips:
+                return candidate_ip
+
+        return f"{prefix}.{preferred_host}"
+
+    def _find_connected_router_idx(self, node_idx: int) -> Optional[int]:
+        """Returns the node index of a directly connected Router/Firewall if one exists."""
+        for edge in self.edges:
+            other_idx = None
+            if edge.u == node_idx:
+                other_idx = edge.v
+            elif edge.v == node_idx:
+                other_idx = edge.u
+
+            if other_idx is not None and 0 <= other_idx < len(self.nodes):
+                other_type = getattr(self.nodes[other_idx], "node_type", "PC")
+                if other_type in ("Router", "Firewall"):
+                    return other_idx
+        return None
+
+    def _find_default_router_idx(self) -> Optional[int]:
+        """Returns the most recently added Router/Firewall node index if any exists."""
+        for idx in range(len(self.nodes) - 1, -1, -1):
+            if getattr(self.nodes[idx], "node_type", "PC") in ("Router", "Firewall"):
+                return idx
+        return None
+
+    def assign_host_ip_for_subnet(
+        self, node_idx: int, subnet: str, preferred_host: int = 10
+    ) -> None:
+        """Assigns a subnet and unique host IP to a node."""
+        if not (0 <= node_idx < len(self.nodes)):
+            return
+        node = self.nodes[node_idx]
+        node.subnet = subnet
+        node.ip_address = self._next_available_host_ip(
+            subnet, preferred_host=preferred_host, exclude_node_idx=node_idx
+        )
+
+    def _generate_unique_subnet_and_ip(self, node_type: str = "PC") -> Tuple[str, str]:
+        """Generates a realistic IP and subnet based on device role."""
+        is_router = node_type in ("Router", "Firewall")
+
+        if is_router:
+            subnet = self._allocate_next_subnet()
+            prefix = self._subnet_prefix(subnet)
+            gateway_ip = f"{prefix}.1"
+            used_ips = {n.ip_address for n in self.nodes if getattr(n, "ip_address", "")}
+            if gateway_ip in used_ips:
+                gateway_ip = self._next_available_host_ip(subnet, preferred_host=2)
+            return gateway_ip, subnet
+
+        router_idx = self._find_default_router_idx()
+        if router_idx is not None:
+            router_node = self.nodes[router_idx]
+            subnet = router_node.subnet or self._allocate_next_subnet()
+            ip = self._next_available_host_ip(subnet, preferred_host=10)
+            return ip, subnet
+
+        # Fallback when adding a host before any router exists
+        existing_subnets = [n.subnet for n in self.nodes if getattr(n, "subnet", "")]
+        subnet = existing_subnets[0] if existing_subnets else self._allocate_next_subnet()
+        ip = self._next_available_host_ip(subnet, preferred_host=10)
         return ip, subnet
 
     def add_node(
@@ -112,11 +208,9 @@ class NetworkGraph:
         is_first = len(self.nodes) == 0
 
         if ip_address is None or subnet is None:
-            auto_ip, auto_subnet = self._generate_unique_subnet_and_ip()
+            auto_ip, auto_subnet = self._generate_unique_subnet_and_ip(node_type=node_type)
             ip_address = ip_address or auto_ip
             subnet = subnet or auto_subnet
-        else:
-            self._next_subnet += 1
 
         new_node = Node(
             id=node_id,
@@ -146,7 +240,7 @@ class NetworkGraph:
         return True
 
     def add_edge(self, u_index: int, v_index: int):
-        """Adds a clean, unencrypted edge between two node indices."""
+        """Adds a clean, unencrypted edge and aligns host IPs to connected routers."""
         if u_index == v_index or not (
             0 <= u_index < len(self.nodes) and 0 <= v_index < len(self.nodes)
         ):
@@ -168,6 +262,20 @@ class NetworkGraph:
                 required_attempts=0,
             )
         )
+
+        # If one endpoint is a Router/Firewall and the other is a host (e.g., PC/Modem),
+        # place the host onto the router's subnet with a unique host IP.
+        u_node = self.nodes[u_index]
+        v_node = self.nodes[v_index]
+        u_is_router = getattr(u_node, "node_type", "PC") in ("Router", "Firewall")
+        v_is_router = getattr(v_node, "node_type", "PC") in ("Router", "Firewall")
+
+        if u_is_router and not v_is_router:
+            if self._subnet_prefix(v_node.subnet) != self._subnet_prefix(u_node.subnet):
+                self.assign_host_ip_for_subnet(v_index, u_node.subnet, preferred_host=10)
+        elif v_is_router and not u_is_router:
+            if self._subnet_prefix(u_node.subnet) != self._subnet_prefix(v_node.subnet):
+                self.assign_host_ip_for_subnet(u_index, v_node.subnet, preferred_host=10)
 
     def set_patient_zero(self, node_index: int):
         for i, node in enumerate(self.nodes):
