@@ -1,5 +1,7 @@
 import math
 import os
+import sys
+from typing import Optional
 from PIL import Image
 import customtkinter as ctk
 
@@ -55,6 +57,8 @@ class ClippyAssistant(ctk.CTkToplevel):
         self.topic_index = 0
         self.anim_phase = 0.0
         self.typing_frame = None
+        self.avatar_ctk_img: Optional[ctk.CTkImage] = None
+        self._last_theme_data: dict = {}
 
         # Tracking variables for custom drag positioning
         self._drag_start_x = 0
@@ -150,6 +154,13 @@ class ClippyAssistant(ctk.CTkToplevel):
         )
         self.btn_send.pack(side="right")
 
+        # Load default Clippy avatar PNG immediately if present
+        self._apply_avatar_icon(
+            icon_path=None,
+            avatar_text="📎 Clippy Assistant",
+            text_color="#3B82F6",
+        )
+
         # Initial Welcome Message
         self._append_message("Clippy", HELP_TOPICS[0][1], is_user=False)
 
@@ -161,25 +172,112 @@ class ClippyAssistant(ctk.CTkToplevel):
         self._animate_idle()
 
     # ------------------------------------------------------------------
-    # Dynamic Theme Integration
+    # Dynamic Theme & Asset Integration
     # ------------------------------------------------------------------
+
+    def _resolve_avatar_icon_path(self, icon_path: Optional[str]) -> Optional[str]:
+        candidates = []
+
+        if icon_path:
+            candidates.append(icon_path)
+
+        base_dirs = []
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            base_dirs.append(sys._MEIPASS)
+
+        this_dir = os.path.dirname(os.path.abspath(__file__))
+        base_dirs.extend([
+            os.path.abspath(os.path.join(this_dir, "..")),
+            os.path.abspath(os.path.join(this_dir, "../..")),
+            os.getcwd(),
+        ])
+
+        rel_targets = []
+        if icon_path and not os.path.isabs(icon_path):
+            rel_targets.append(icon_path)
+            rel_targets.append(os.path.basename(icon_path))
+
+        rel_targets.extend([
+            os.path.join("assets", "clippy.png"),
+            os.path.join("ui", "assets", "clippy.png"),
+            os.path.join("threat_simulator", "assets", "clippy.png"),
+            os.path.join("threat_simulator", "ui", "assets", "clippy.png"),
+            "clippy.png",
+        ])
+
+        for bdir in base_dirs:
+            for rel in rel_targets:
+                if rel:
+                    candidates.append(os.path.join(bdir, rel))
+
+        seen = set()
+        for path in candidates:
+            if not path:
+                continue
+            norm_path = os.path.normpath(path)
+            if norm_path in seen:
+                continue
+            seen.add(norm_path)
+            if os.path.exists(norm_path):
+                return norm_path
+
+        return None
+
+    def _apply_avatar_icon(
+        self,
+        icon_path: Optional[str],
+        avatar_text: str,
+        text_color: str,
+    ):
+        if not hasattr(self, "avatar_label") or not self.avatar_label.winfo_exists():
+            return
+
+        resolved_path = self._resolve_avatar_icon_path(icon_path)
+
+        if resolved_path:
+            try:
+                pil_image = Image.open(resolved_path).convert("RGBA")
+                self.avatar_ctk_img = ctk.CTkImage(
+                    light_image=pil_image, dark_image=pil_image, size=(28, 28)
+                )
+                clean_text = avatar_text.replace("📎", "").strip() or "Clippy Assistant"
+                self.avatar_label.configure(
+                    text=f" {clean_text}",
+                    image=self.avatar_ctk_img,
+                    compound="left",
+                    text_color=text_color,
+                )
+                return
+            except Exception as e:
+                print(f"[ClippyAssistant] Error loading avatar icon '{resolved_path}': {e}")
+
+        self.avatar_ctk_img = None
+        self.avatar_label.configure(
+            text=avatar_text,
+            image="",
+            text_color=text_color,
+        )
 
     def apply_theme(self, theme_data: dict):
         """Applies JSON theme styling rules and custom avatars to the assistant window."""
-        clippy_cfg = theme_data.get("clippy", {
-            "window_bg": "#f4ecd8",
-            "bubble_bg": "#ffffff",
-            "text_color": "#222222",
-            "border_color": "#8b5a2b",
-            "avatar": "📎 Clippy Assistant"
-        })
+        self._last_theme_data = theme_data or {}
+        clippy_cfg = self._last_theme_data.get(
+            "clippy",
+            {
+                "window_bg": "#f4ecd8",
+                "bubble_bg": "#ffffff",
+                "text_color": "#222222",
+                "border_color": "#8b5a2b",
+                "avatar": "📎 Clippy Assistant",
+            },
+        )
 
         # Configure window container backgrounds and borders
         self.configure(fg_color=clippy_cfg.get("window_bg", "#f4ecd8"))
         if hasattr(self, "container") and self.container.winfo_exists():
             self.container.configure(
                 fg_color=clippy_cfg.get("window_bg", "#f4ecd8"),
-                border_color=clippy_cfg.get("border_color", "#3B82F6")
+                border_color=clippy_cfg.get("border_color", "#3B82F6"),
             )
 
         # Configure chat scroll frame background
@@ -187,31 +285,14 @@ class ClippyAssistant(ctk.CTkToplevel):
             self.chat_scroll.configure(fg_color=clippy_cfg.get("bubble_bg", "#ffffff"))
 
         # Update text or custom PNG image icon for the avatar label
-        if hasattr(self, "avatar_label") and self.avatar_label.winfo_exists():
-            text_color = clippy_cfg.get("text_color", "#3B82F6")
-            icon_path = clippy_cfg.get("avatar_icon", None)
-            
-            # Clear old Tcl image registry reference before assigning new image
-            self.avatar_label.configure(image="")
-
-            if icon_path and os.path.exists(icon_path):
-                try:
-                    pil_image = Image.open(icon_path)
-                    self.avatar_ctk_img = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(28, 28))
-                    avatar_text = clippy_cfg.get("avatar", " Clippy Assistant")
-                    self.avatar_label.configure(
-                        text=avatar_text,
-                        image=self.avatar_ctk_img,
-                        compound="left",
-                        text_color=text_color
-                    )
-                except Exception as e:
-                    print(f"[ClippyAssistant] Error loading avatar icon '{icon_path}': {e}")
-                    avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
-                    self.avatar_label.configure(text=avatar_text, image="", text_color=text_color)
-            else:
-                avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
-                self.avatar_label.configure(text=avatar_text, image="", text_color=text_color)
+        text_color = clippy_cfg.get("text_color", "#3B82F6")
+        icon_path = clippy_cfg.get("avatar_icon", None)
+        avatar_text = clippy_cfg.get("avatar", "📎 Clippy Assistant")
+        self._apply_avatar_icon(
+            icon_path=icon_path,
+            avatar_text=avatar_text,
+            text_color=text_color,
+        )
 
     # ------------------------------------------------------------------
     # Focus & Input Handlers
@@ -353,7 +434,7 @@ class ClippyAssistant(ctk.CTkToplevel):
                         net_canvas.render()
 
                 return f"🐉 [Metasploit] Executed payload against Node {target_idx}! Target set to INFECTED."
-            
+
             return f"Node {target_idx} is out of bounds (Canvas contains {len(current_graph.nodes)} nodes)."
 
         elif "ddos" in q or "flood" in q or "dos" in q:

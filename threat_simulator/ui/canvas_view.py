@@ -6,11 +6,18 @@ import tkinter as tk
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
-# Add project root directory to sys.path to resolve 'utils'
+# Add project / bundle root directory to sys.path to resolve 'utils' in both dev and frozen (.exe) modes
 current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+candidate_roots = [
+    os.path.abspath(os.path.join(current_dir, "../../")),
+    os.path.abspath(os.path.join(current_dir, "../")),
+]
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    candidate_roots.insert(0, sys._MEIPASS)
+
+for candidate in candidate_roots:
+    if os.path.isdir(os.path.join(candidate, "utils")) and candidate not in sys.path:
+        sys.path.insert(0, candidate)
 
 from utils.exporter import export_simulation_summary
 from ui.cli_window import CiscoCLITerminal
@@ -538,13 +545,13 @@ class NetworkCanvas(ctk.CTkCanvas):
                 if 0 <= pdu.src_node_idx < len(self.graph.nodes) and 0 <= pdu.dst_node_idx < len(self.graph.nodes):
                     n1 = self.graph.nodes[pdu.src_node_idx]
                     n2 = self.graph.nodes[pdu.dst_node_idx]
-                    
+
                     s1_x, s1_y = self.world_to_screen(n1.x, n1.y)
                     s2_x, s2_y = self.world_to_screen(n2.x, n2.y)
-                    
+
                     px = s1_x + (s2_x - s1_x) * pdu.progress
                     py = s1_y + (s2_y - s1_y) * pdu.progress
-                    
+
                     if abs(event.x - px) <= 16 and abs(event.y - py) <= 16:
                         PacketInspectorModal(self.winfo_toplevel(), pdu, self.graph)
                         return
@@ -712,7 +719,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                         width=max(2, int(3 * zf)),
                         dash=(4, 4)
                     )
-                    
+
                     mid_sx, mid_sy = (s1_x + s2_x) / 2, (s1_y + s2_y) / 2
                     bx1, by1 = mid_sx - int(45 * zf), mid_sy - int(16 * zf)
                     bx2, by2 = mid_sx + int(45 * zf), mid_sy + int(16 * zf)
@@ -784,7 +791,7 @@ class NetworkCanvas(ctk.CTkCanvas):
                     by2 = by1 + bar_h
 
                     self.create_rectangle(bx1, by1, bx2, by2, fill="#111111", outline="#444444", width=1)
-                    
+
                     fill_w = int(bar_w * max(0.0, min(1.0, crack_progress)))
                     if fill_w > 0:
                         self.create_rectangle(bx1, by1, bx1 + fill_w, by2, fill=beam_color, outline="", width=0)
